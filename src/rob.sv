@@ -17,7 +17,14 @@ module rob_controller(
     input logic [ROB_IDX_W-1:0] rob_head,
     input logic [ROB_IDX_W-1:0] rob_tail,
     input logic rob_write,
-    
+    input logic is_branch,
+    input logic pred_taken,
+    input logic [INSTR_MEM_IDX_W-1:0] pred_target,
+    input logic actual_taken,
+    input logic [INSTR_MEM_IDX_W-1:0] actual_target,
+    input logic exec_valid,
+    input logic [ROB_IDX_W-1:0] exec_rob_idx,
+
     output logic valid_out,
     output logic [INSTR_MEM_IDX_W-1:0] pc_out,
     output logic [ARCH_REG_IDX_W-1:0] logical_rd_out,
@@ -28,7 +35,13 @@ module rob_controller(
     output logic is_load_out,
     output logic [6:0] opcode_out,
     output logic [2:0] funct3_out,
-    output logic [6:0] funct7_out
+    output logic [6:0] funct7_out,
+    output logic is_branch_out,
+    output logic pred_taken_out,
+    output logic [INSTR_MEM_IDX_W-1:0] pred_target_out,
+    output logic flush,
+    output logic [INSTR_MEM_IDX_W-1:0] redirect_pc
+
 );
 
 rob_entry_t rob [0:ROB_LENGTH-1];
@@ -47,6 +60,9 @@ always_ff @(posedge clk) begin
             rob[i].opcode <= 'b0;
             rob[i].funct3 <= 'b0;
             rob[i].funct7 <= 'b0;
+            rob[i].is_branch <= 'b0;
+            rob[i].pred_taken <= 'b0;
+            rob[i].pred_target <= 'b0;
         end
     end
     else if (rob_write) begin
@@ -61,6 +77,10 @@ always_ff @(posedge clk) begin
         rob[rob_tail].opcode <= opcode;
         rob[rob_tail].funct3 <= funct3;
         rob[rob_tail].funct7 <= funct7;
+        rob[rob_tail].is_branch <= is_branch;
+        rob[rob_tail].pred_taken <= pred_taken;
+        rob[rob_tail].pred_target <= pred_target;
+        
     end
 end
 
@@ -76,5 +96,13 @@ assign is_load_out = rob[rob_head].is_load;
 assign opcode_out = rob[rob_head].opcode;
 assign funct3_out = rob[rob_head].funct3;
 assign funct7_out = rob[rob_head].funct7;
+assign is_branch_out = rob[rob_head].is_branch;
+assign pred_taken_out = rob[rob_head].pred_taken;
+assign pred_target_out = rob[rob_head].pred_target;
+assign flush = 1'b0;
+assign redirect_pc = '0;
+    
+
+
 
 endmodule
