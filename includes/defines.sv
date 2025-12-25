@@ -10,6 +10,8 @@ package general_defines;
     parameter INSTR_MEM_LENGTH = 256;
     parameter DATA_MEM_LENGTH = 256;
     parameter FETCH_BUFFER_LENGTH = 8;
+    parameter PHT_LENGTH = 1024; 
+    parameter BTB_LENGTH = 64;
 
     //derived parameters 
     localparam ROB_IDX_W = (ROB_LENGTH > 1) ? $clog2(ROB_LENGTH) : 1;
@@ -20,6 +22,9 @@ package general_defines;
     localparam INSTR_MEM_IDX_W = (INSTR_MEM_LENGTH > 1) ? $clog2(INSTR_MEM_LENGTH) : 1;
     localparam DATA_MEM_IDX_W = (DATA_MEM_LENGTH > 1) ? $clog2(DATA_MEM_LENGTH) : 1;
     localparam FETCH_BUFFER_IDX_W = (FETCH_BUFFER_LENGTH > 1) ? $clog2(FETCH_BUFFER_LENGTH) : 1;
+    localparam PHT_IDX_W = (PHT_LENGTH> 1) ? $clog2(PHT_LENGTH) : 1;
+    localparam BTB_IDX_W = (BTB_LENGTH > 1) ? $clog2(BTB_LENGTH) : 1;
+    
 
     //typedefs 
     typedef struct packed{
@@ -34,6 +39,9 @@ package general_defines;
         logic [6:0] opcode;
         logic [2:0] funct3;
         logic [6:0] funct7;
+        logic is_branch;
+        logic pred_taken;
+        logic [INSTR_MEM_IDX_W-1:0] pred_target;
     } rob_entry_t;
 
 endpackage
