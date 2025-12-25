@@ -21,4 +21,19 @@ package general_defines;
     localparam DATA_MEM_IDX_W = (DATA_MEM_LENGTH > 1) ? $clog2(DATA_MEM_LENGTH) : 1;
     localparam FETCH_BUFFER_IDX_W = (FETCH_BUFFER_LENGTH > 1) ? $clog2(FETCH_BUFFER_LENGTH) : 1;
 
+    //typedefs 
+    typedef struct packed{
+        logic valid;
+        logic [INSTR_MEM_IDX_W-1:0] pc;
+        logic [ARCH_REG_IDX_W-1:0] logical_rd;
+        logic [PHYS_REG_IDX_W-1:0] phys_rd;
+        logic [INT_DATA_W-1:0] result;
+        logic done;
+        logic is_store;
+        logic is_load;
+        logic [6:0] opcode;
+        logic [2:0] funct3;
+        logic [6:0] funct7;
+    } rob_entry_t;
+
 endpackage

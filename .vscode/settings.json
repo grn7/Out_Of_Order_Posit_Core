@@ -1,0 +1,27 @@
+{
+  "files.associations": {
+    "*.sv": "systemverilog",
+    "*.svh": "systemverilog"
+  },
+
+  // slang-server configuration
+  "systemverilog.includeIndexing": [
+    "${workspaceFolder}/includes",
+    "${workspaceFolder}/src"
+  ],
+
+  "systemverilog.libraryIndexing": [
+    "${workspaceFolder}/includes",
+    "${workspaceFolder}/src"
+  ],
+
+  // optional but recommended
+  "systemverilog.excludeIndexing": [
+    "**/tb/**",
+    "**/original_code/**"
+  ],
+
+  // use Verilator for linting (matches your flow)
+  "systemverilog.linter": "verilator",
+  "systemverilog.launchConfiguration": "verilator -sv --lint-only --Wall"
+}

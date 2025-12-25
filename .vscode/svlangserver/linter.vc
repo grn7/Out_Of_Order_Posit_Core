@@ -1,0 +1,7 @@
+-v /home/gaurav/Out_Of_Order_Posit_Core/includes/defines.sv
++incdir+/home/gaurav/Out_Of_Order_Posit_Core/includes
++incdir+/home/gaurav/Out_Of_Order_Posit_Core/original_code
++incdir+/home/gaurav/Out_Of_Order_Posit_Core/src
++incdir+/home/gaurav/Out_Of_Order_Posit_Core/includes
++incdir+/home/gaurav/Out_Of_Order_Posit_Core/original_code
++incdir+/home/gaurav/Out_Of_Order_Posit_Core/src
