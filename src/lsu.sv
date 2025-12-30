@@ -1,11 +1,14 @@
 module lsu #(
     parameter ADDR_W = 32,
     parameter DATA_W = 32,
-    parameter ROB_W  = 6
+    parameter ROB_W  = 6,
+    parameter LQ_SIZE = 8,
+    parameter SQ_SIZE = 8
 )(
     input  logic clk,
     input  logic rst,
 
+    // Issue interface from instruction queue
     input  logic              issue_valid,
     input  logic              issue_is_load,
     input  logic              issue_is_store,
@@ -13,13 +16,16 @@ module lsu #(
     input  logic [ADDR_W-1:0] issue_addr,
     input  logic [DATA_W-1:0] issue_store_data,
 
+    // Commit interface from ROB
     input  logic              commit_store,
     input  logic [ROB_W-1:0]  commit_rob,
 
+    // Writeback interface to ROB
     output logic              wb_valid,
     output logic [ROB_W-1:0]  wb_rob,
     output logic [DATA_W-1:0] wb_data,
 
+    // Memory interface
     output logic              mem_rd_valid,
     output logic [ADDR_W-1:0] mem_rd_addr,
     input  logic              mem_rd_resp,
@@ -30,7 +36,13 @@ module lsu #(
     output logic [DATA_W-1:0] mem_wr_data
 );
 
-    lq lq_u (
+    // Load Queue instantiation
+    lq #(
+        .LQ_SIZE(LQ_SIZE),
+        .ADDR_W(ADDR_W),
+        .DATA_W(DATA_W),
+        .ROB_W(ROB_W)
+    ) lq_u (
         .clk(clk),
         .rst(rst),
         .enq_valid(issue_valid && issue_is_load),
@@ -43,7 +55,13 @@ module lsu #(
         .lq_data(wb_data)
     );
 
-    sq sq_u (
+    // Store Queue instantiation
+    sq #(
+        .SQ_SIZE(SQ_SIZE),
+        .ADDR_W(ADDR_W),
+        .DATA_W(DATA_W),
+        .ROB_W(ROB_W)
+    ) sq_u (
         .clk(clk),
         .rst(rst),
         .enq_valid(issue_valid && issue_is_store),
@@ -57,7 +75,13 @@ module lsu #(
         .mem_wr_data(mem_wr_data)
     );
 
+    // Memory read request - direct from issue
     assign mem_rd_valid = issue_valid && issue_is_load;
     assign mem_rd_addr  = issue_addr;
+
+    // TODO: Add store-to-load forwarding logic
+    // - Check if load address matches any pending store in SQ
+    // - Forward data from SQ if address matches
+    // - Implement memory disambiguation
 
 endmodule

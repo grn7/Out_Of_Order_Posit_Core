@@ -29,28 +29,46 @@ module lq #(
 
     logic [$clog2(LQ_SIZE)-1:0] head;
     logic [$clog2(LQ_SIZE)-1:0] tail;
+    logic [$clog2(LQ_SIZE)-1:0] next_head;
+    logic [$clog2(LQ_SIZE)-1:0] next_tail;
+    logic lq_full;
+    logic lq_empty;
 
+    // FIFO status flags
+    assign lq_empty = !lq[head].valid;
+    assign lq_full = lq[tail].valid;
+    assign next_head = (head == (LQ_SIZE-1)) ? '0 : head + 1'b1;
+    assign next_tail = (tail == (LQ_SIZE-1)) ? '0 : tail + 1'b1;
+
+    // Sequential logic for LQ FIFO management
     always_ff @(posedge clk) begin
         if (rst) begin
             head <= '0;
             tail <= '0;
-            foreach (lq[i]) lq[i].valid <= 1'b0;
+            for (int i = 0; i < LQ_SIZE; i++) begin
+                lq[i].valid <= 1'b0;
+                lq[i].rob   <= '0;
+                lq[i].addr  <= '0;
+            end
         end else begin
-            if (enq_valid && !lq[tail].valid) begin
+            // Enqueue new load request
+            if (enq_valid && !lq_full) begin
                 lq[tail].valid <= 1'b1;
                 lq[tail].rob   <= enq_rob;
                 lq[tail].addr  <= enq_addr;
-                tail <= (tail == LQ_SIZE-1) ? '0 : tail + 1'b1;
+                tail <= next_tail;
             end
 
-            if (mem_resp && lq[head].valid) begin
+            // Dequeue completed load
+            if (mem_resp && !lq_empty) begin
                 lq[head].valid <= 1'b0;
-                head <= (head == LQ_SIZE-1) ? '0 : head + 1'b1;
+                head <= next_head;
             end
         end
     end
 
-    assign lq_done = mem_resp;
+    // Output assignments
+    assign lq_done = mem_resp && !lq_empty;
     assign lq_rob  = lq[head].rob;
     assign lq_data = mem_data;
 
