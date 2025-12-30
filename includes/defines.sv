@@ -24,6 +24,21 @@ package general_defines;
     localparam FETCH_BUFFER_IDX_W = (FETCH_BUFFER_LENGTH > 1) ? $clog2(FETCH_BUFFER_LENGTH) : 1;
     localparam PHT_IDX_W = (PHT_LENGTH> 1) ? $clog2(PHT_LENGTH) : 1;
     localparam BTB_IDX_W = (BTB_LENGTH > 1) ? $clog2(BTB_LENGTH) : 1;
+
+    //defining opcode and other similar things 
+    `define OPCODE_LOAD 7'b0000011 //for LB,LH,LW,LBU,LHU
+    `define OPCODE_STORE 7'b0100011 //for SB,SH,SW
+    `define OPCODE_ARITH_I 7'b0010011 //for ADDI,XORI,ORI,ANDI, ...
+    `define OPCODE_ARITH_R 7'b0110011 //for ADD,SUB,SLL,XOR,OR,AND
+    `define OPCODE_LUI 7'b0110111 //for LUI
+    `define OPCODE_AUIPC 7'b0010111 //for AUIPC
+    `define OPCODE_BRANCH 7'b1100011 //for BEQ,BNE,BLT ...
+    `define OPCODE_JAL 7'b1101111 //for JAL
+    `define OPCODE_JALR 7'b1100111 //for JALR
+    //M extension - same opcode as ARITH_R , uses funct 7 to differentiate
+    `define OPCODE_M_EXT 7'b0110011 //for MUL,DIV,MULH .. 
+    // FP 
+    `define OPCODE_FP 7'b1010011 //for FADD,FSUB,FMUL,FDIV ..
     
 
     //typedefs 
