@@ -59,4 +59,29 @@ package general_defines;
         logic [INSTR_MEM_IDX_W-1:0] pred_target;
     } rob_entry_t;
 
+    //Issue queue entry structure
+    typedef struct packed {
+        logic [6:0] opcode;
+        logic [INSTR_MEM_IDX_W-1:0] pc;
+        logic [PHYS_REG_IDX_W-1:0] phys_rd;
+        logic [PHYS_REG_IDX_W-1:0] phys_rs1;
+        logic [PHYS_REG_IDX_W-1:0] phys_rs2;
+        logic [INT_DATA_W-1:0] imm;
+        logic [2:0] fu_type; // 0=ALU, 1=MEM, 2=MUL, 3=DIV, 4=FPU
+        logic rs1_ready;
+        logic rs2_ready;
+        logic [INT_DATA_W-1:0] rs1_value; // are these tags ??
+        logic [INT_DATA_W-1:0] rs2_value;
+        logic valid;
+        logic [2:0] funct3;
+        logic [6:0] funct7;
+        logic [ROB_IDX_W:0] rob_idx;
+    } iq_entry_t;
+
+    typedef struct packed {
+        logic valid;
+        logic [PHYS_REG_IDX_W-1:0] phys_rd;
+        logic [INT_DATA_W-1:0] result;
+    } bypass_entry_t;
+
 endpackage
