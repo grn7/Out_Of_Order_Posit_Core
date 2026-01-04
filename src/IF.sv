@@ -22,7 +22,10 @@ module IF (
     // Outputs to next stage (ID)
     output logic                        if_valid,        // valid instruction fetched
     output logic [INSTR_MEM_IDX_W-1:0]  if_pc,           // pc sent to next stage
-    output logic [INT_DATA_W-1:0]       if_instr         // instruction sent to next stage
+    output logic [INT_DATA_W-1:0]       if_instr,        // instruction sent to next stage
+    
+    // Current PC for branch predictor (before fetch completes)
+    output logic [INSTR_MEM_IDX_W-1:0]  current_pc       // current PC being fetched
 );
 
     // Internal PC register
@@ -85,5 +88,8 @@ module IF (
     assign if_valid = fetched_valid;
     assign if_pc = fetched_pc;
     assign if_instr = fetched_instr;
+    
+    // Output current PC for branch predictor
+    assign current_pc = pc;
 
 endmodule

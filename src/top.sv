@@ -5,7 +5,8 @@ module top (
     input logic rst
 );
 
-    logic [INSTR_MEM_IDX_W-1:0] if_pc;           // IF stage PC
+    logic [INSTR_MEM_IDX_W-1:0] if_pc;           // IF stage PC (fetched)
+    logic [INSTR_MEM_IDX_W-1:0] current_pc;      // Current PC being fetched (for BP/BTB)
     logic [INT_DATA_W-1:0]      if_instr;        // fetched instruction
     logic                       if_valid;        // IF stage output valid
 
@@ -31,12 +32,69 @@ module top (
     logic [INT_DATA_W-1:0] issue_addr;        // memory address
     logic [INT_DATA_W-1:0] issue_store_data;  // store data
 
+    // Execution results (stubs - to be replaced by actual execution units)
+    logic                        exec_valid;
+    logic [ROB_IDX_W-1:0]        exec_rob_idx;
+    logic [PHYS_REG_IDX_W-1:0]   exec_phys_rd;
+    logic [INT_DATA_W-1:0]       exec_result;
+    logic                        exec_is_branch;
+    logic                        exec_branch_taken;
+    logic [INSTR_MEM_IDX_W-1:0]  exec_branch_target;
+
+    // Writeback stage outputs
+    logic                        rob_wb_valid;
+    logic [ROB_IDX_W-1:0]        rob_wb_idx;
+    logic [INT_DATA_W-1:0]       rob_wb_result;
+    logic                        rob_wb_is_branch;
+    logic                        rob_wb_branch_taken;
+    logic [INSTR_MEM_IDX_W-1:0]  rob_wb_branch_target;
+    logic                        prf_we;
+    logic [PHYS_REG_IDX_W-1:0]   prf_waddr;
+    logic [INT_DATA_W-1:0]       prf_wdata;
+    logic                        bypass_valid;
+    logic [PHYS_REG_IDX_W-1:0]   bypass_phys_rd;
+    logic [INT_DATA_W-1:0]       bypass_result;
+
+    // LSU writeback (from existing LSU)
     logic            wb_valid;                // writeback valid
     logic [ROB_IDX_W-1:0] wb_rob;             // writeback rob index
     logic [INT_DATA_W-1:0] wb_data;           // writeback data
 
-    logic            commit_store;             // store commit from rob
-    logic [ROB_IDX_W-1:0] commit_rob;          // committing rob entry
+    // Commit stage outputs
+    logic                        rob_commit;
+    logic                        rob_advance_head;
+    logic                        arf_we;
+    logic [ARCH_REG_IDX_W-1:0]   arf_waddr;
+    logic [INT_DATA_W-1:0]       arf_wdata;
+    logic                        commit_store;
+    logic [ROB_IDX_W-1:0]        commit_rob;
+    logic                        flush_pipeline;
+    logic [INSTR_MEM_IDX_W-1:0]  redirect_pc;
+    logic                        update_bp;
+    logic [INSTR_MEM_IDX_W-1:0]  update_bp_pc;
+    logic                        update_bp_taken;
+    logic                        free_phys_reg;
+    logic [PHYS_REG_IDX_W-1:0]   freed_phys_reg;
+    logic [63:0]                 commit_count;
+    logic [63:0]                 branch_mispredictions;
+    
+    // ROB head entry signals for commit
+    logic                        rob_head_valid;
+    logic                        rob_head_done;
+    logic [INSTR_MEM_IDX_W-1:0]  rob_head_pc;
+    logic [ARCH_REG_IDX_W-1:0]   rob_head_logical_rd;
+    logic [PHYS_REG_IDX_W-1:0]   rob_head_phys_rd;
+    logic [INT_DATA_W-1:0]       rob_head_result;
+    logic [6:0]                  rob_head_opcode;
+    logic [2:0]                  rob_head_funct3;
+    logic [6:0]                  rob_head_funct7;
+    logic                        rob_head_is_store;
+    logic                        rob_head_is_load;
+    logic                        rob_head_is_branch;
+    logic                        rob_head_pred_taken;
+    logic [INSTR_MEM_IDX_W-1:0]  rob_head_pred_target;
+    logic                        rob_head_branch_taken;
+    logic [INSTR_MEM_IDX_W-1:0]  rob_head_branch_target;
 
     logic            mem_rd_valid;             // memory read request
     logic [INT_DATA_W-1:0] mem_rd_addr;        // memory read address
@@ -48,8 +106,8 @@ module top (
     logic [INT_DATA_W-1:0] mem_wr_data;        // memory write data
 
     assign if_stall = 1'b0;                   // no stall for now
-    assign if_flush = 1'b0;                   // no flush for now
-    assign if_flush_pc = '0;                  // flush PC stub
+    assign if_flush = flush_pipeline;         // flush from commit stage
+    assign if_flush_pc = redirect_pc;         // redirect PC from commit
     assign imem_resp_valid = 1'b1;            // always ready for now
     assign imem_resp_data = '0;               // instruction memory stub
 
@@ -72,38 +130,107 @@ module top (
         .imem_resp_data   (imem_resp_data),
         .if_valid         (if_valid),
         .if_pc            (if_pc),
-        .if_instr         (if_instr)
+        .if_instr         (if_instr),
+        .current_pc       (current_pc)
     );
 
     // Branch Predictor
     bp bp_u (
         .clk          (clk),
         .rst          (rst),
-        .fetch_pc     (if_pc),
-        .actual_taken (1'b0),                 // EX feedback stub
-        .update_valid (1'b0),                 // EX feedback stub
+        .fetch_pc     (current_pc),           // Use current PC being fetched
+        .actual_taken (update_bp_taken),      // From commit stage
+        .update_valid (update_bp),            // From commit stage
         .pred_taken   ()                      // connect when needed
     );
 
     // Branch Target Buffer
     btb btb_u (
-        .clk    (clk),
-        .rst    (rst),
-        .pc     (if_pc),
-        .hit    (btb_hit),
-        .target (btb_target)
-    );
-
-    // Reorder Buffer
-    rob rob_u (
         .clk          (clk),
         .rst          (rst),
-        .wb_valid     (wb_valid),
-        .wb_rob       (wb_rob),
-        .wb_data      (wb_data),
-        .commit_store (commit_store),
-        .commit_rob   (commit_rob)
+        .fetch_pc     (current_pc),           // Use current PC being fetched
+        .btb_hit      (btb_hit),
+        .btb_target   (btb_target),
+        .update_valid (1'b0),                 // Update stub
+        .update_pc    ('0),                   // Update stub
+        .update_target('0)                    // Update stub
     );
+
+    // Writeback Stage
+    writeback wb_stage (
+        .clk                    (clk),
+        .rst                    (rst),
+        .exec_valid             (exec_valid),
+        .exec_rob_idx           (exec_rob_idx),
+        .exec_phys_rd           (exec_phys_rd),
+        .exec_result            (exec_result),
+        .exec_is_branch         (exec_is_branch),
+        .exec_branch_taken      (exec_branch_taken),
+        .exec_branch_target     (exec_branch_target),
+        .lsu_wb_valid           (wb_valid),
+        .lsu_wb_rob             (wb_rob),
+        .lsu_wb_phys_rd         ('0),             // TODO: connect from LSU
+        .lsu_wb_data            (wb_data),
+        .rob_wb_valid           (rob_wb_valid),
+        .rob_wb_idx             (rob_wb_idx),
+        .rob_wb_result          (rob_wb_result),
+        .rob_wb_is_branch       (rob_wb_is_branch),
+        .rob_wb_branch_taken    (rob_wb_branch_taken),
+        .rob_wb_branch_target   (rob_wb_branch_target),
+        .prf_we                 (prf_we),
+        .prf_waddr              (prf_waddr),
+        .prf_wdata              (prf_wdata),
+        .bypass_valid           (bypass_valid),
+        .bypass_phys_rd         (bypass_phys_rd),
+        .bypass_result          (bypass_result)
+    );
+
+    // Commit Stage
+    commit commit_stage (
+        .clk                     (clk),
+        .rst                     (rst),
+        .rob_head_valid          (rob_head_valid),
+        .rob_head_done           (rob_head_done),
+        .rob_head_pc             (rob_head_pc),
+        .rob_head_logical_rd     (rob_head_logical_rd),
+        .rob_head_phys_rd        (rob_head_phys_rd),
+        .rob_head_result         (rob_head_result),
+        .rob_head_opcode         (rob_head_opcode),
+        .rob_head_funct3         (rob_head_funct3),
+        .rob_head_funct7         (rob_head_funct7),
+        .rob_head_is_store       (rob_head_is_store),
+        .rob_head_is_load        (rob_head_is_load),
+        .rob_head_is_branch      (rob_head_is_branch),
+        .rob_head_pred_taken     (rob_head_pred_taken),
+        .rob_head_pred_target    (rob_head_pred_target),
+        .rob_head_branch_taken   (rob_head_branch_taken),
+        .rob_head_branch_target  (rob_head_branch_target),
+        .rob_commit              (rob_commit),
+        .rob_advance_head        (rob_advance_head),
+        .arf_we                  (arf_we),
+        .arf_waddr               (arf_waddr),
+        .arf_wdata               (arf_wdata),
+        .commit_store            (commit_store),
+        .commit_rob_idx          (commit_rob),
+        .flush_pipeline          (flush_pipeline),
+        .redirect_pc             (redirect_pc),
+        .update_bp               (update_bp),
+        .update_bp_pc            (update_bp_pc),
+        .update_bp_taken         (update_bp_taken),
+        .free_phys_reg           (free_phys_reg),
+        .freed_phys_reg          (freed_phys_reg),
+        .commit_count            (commit_count),
+        .branch_mispredictions   (branch_mispredictions)
+    );
+    
+    // Execution unit stubs (to be replaced)
+    assign exec_valid = 1'b0;
+    assign exec_rob_idx = '0;
+    assign exec_phys_rd = '0;
+    assign exec_result = '0;
+    assign exec_is_branch = 1'b0;
+    assign exec_branch_taken = 1'b0;
+    assign exec_branch_target = '0;
 
     lsu lsu_u (
         .clk              (clk),
@@ -151,6 +278,24 @@ module top (
     rob_entry_t rob [0:ROB_LENGTH-1];
     logic [ROB_IDX_W-1:0] rob_head,rob_tail;
     logic rob_full, rob_empty;
+    
+    // Extract ROB head entry for commit stage
+    assign rob_head_valid = rob[rob_head].valid;
+    assign rob_head_done = rob[rob_head].done;
+    assign rob_head_pc = rob[rob_head].pc;
+    assign rob_head_logical_rd = rob[rob_head].logical_rd;
+    assign rob_head_phys_rd = rob[rob_head].phys_rd;
+    assign rob_head_result = rob[rob_head].result;
+    assign rob_head_opcode = rob[rob_head].opcode;
+    assign rob_head_funct3 = rob[rob_head].funct3;
+    assign rob_head_funct7 = rob[rob_head].funct7;
+    assign rob_head_is_store = rob[rob_head].is_store;
+    assign rob_head_is_load = rob[rob_head].is_load;
+    assign rob_head_is_branch = rob[rob_head].is_branch;
+    assign rob_head_pred_taken = rob[rob_head].pred_taken;
+    assign rob_head_pred_target = rob[rob_head].pred_target;
+    assign rob_head_branch_taken = rob[rob_head].branch_taken;
+    assign rob_head_branch_target = rob[rob_head].branch_target;
 
     //Register renaming 
     logic [ARCH_REG_IDX_W-1:0] rename_table [0:ARCH_REG_LENGTH-1]; //maps logical to physical register
@@ -176,18 +321,6 @@ module top (
     logic [INT_DATA_W-1:0] alu_result;
     logic alu_valid;
     logic [PHYS_REG_IDX_W-1:0] alu_dest;
-
-    //Bypass unit
-    bypass_entry_t bypass [0:BYPASS_LENGTH-1]; 
-
-    //Control signals
-    logic decode_stall, rename_stall, dispatch_stall;
-
-    function bypass_entry_t get_default_bypass();
-        get_default_bypass.phys_rd = '0;
-        get_default_bypass.result = '0;
-        get_default_bypass.valid = 1'b0;
-    endfunction
 
     //Status flags
     assign rob_full = ((rob_tail+1)%ROB_LENGTH == rob_head) && rob[rob_tail].valid;
@@ -245,9 +378,17 @@ module top (
             mem_iq_head <= 0; mem_iq_tail <= 0;
             fp_iq_head <= 0; fp_iq_tail <= 0;
             
+            // Initialize physical register file and valid bits
+            for (int i = 0; i < PHYS_REG_LENGTH; i++) begin
+                phys_reg_file[i] <= '0;
+                phys_reg_valid[i] <= (i < ARCH_REG_LENGTH) ? 1'b1 : 1'b0; // Architectural regs valid initially
+            end
+            
             // Initialize ROB
             for (int i = 0; i < ROB_LENGTH; i++) begin
                 rob[i] <= '0;
+                rob[i].branch_taken <= 1'b0;
+                rob[i].branch_target <= '0;
             end
             rob_head <= 0;
             rob_tail <= 0;
@@ -367,72 +508,97 @@ module top (
                 // fetch_head <= (fetch_head + 1) % 8;
             end
         end    
+        
+        // Physical register file write from writeback stage
+        if (prf_we) begin
+            phys_reg_file[prf_waddr] <= prf_wdata;
+            phys_reg_valid[prf_waddr] <= 1'b1;
+        end
 
-        // Wakeup logic - check bypass network for ready operands
+        // Wakeup logic - use bypass network from writeback for ready operands
+        // This creates combinational forwarding paths
         for (int i = 0; i < IQ_LENGTH; i++) begin
-
-            // Check bypass for rs1
+            // Check bypass for integer IQ
             if (int_iq[i].valid) begin
-                if (!int_iq[i].rs1_ready) begin
-                    for (int j = 0; j < BYPASS_LENGTH; j++) begin
-                        if (bypass[j].valid && bypass[j].phys_rd == int_iq[i].phys_rs1) begin
-                            int_iq[i].rs1_value <= bypass[j].result;
-                            int_iq[i].rs1_ready <= 1;
-                        end
-                    end
+                if (!int_iq[i].rs1_ready && bypass_valid && 
+                    (bypass_phys_rd == int_iq[i].phys_rs1)) begin
+                    int_iq[i].rs1_value <= bypass_result;
+                    int_iq[i].rs1_ready <= 1'b1;
                 end
                 
-                // Check bypass for rs2
-                if (!int_iq[i].rs2_ready && int_iq[i].opcode == `OPCODE_ARITH_R) begin
-                    for (int j = 0; j < BYPASS_LENGTH; j++) begin
-                        if (bypass[j].valid && bypass[j].phys_rd == int_iq[i].phys_rs2) begin
-                            int_iq[i].rs2_value <= bypass[j].result;
-                            int_iq[i].rs2_ready <= 1;
-                        end
-                    end
+                if (!int_iq[i].rs2_ready && bypass_valid && 
+                    (bypass_phys_rd == int_iq[i].phys_rs2) && 
+                    (int_iq[i].opcode == `OPCODE_ARITH_R)) begin
+                    int_iq[i].rs2_value <= bypass_result;
+                    int_iq[i].rs2_ready <= 1'b1;
                 end
             end
             
-            // Similar wakeup logic for mem_iq
+            // Check bypass for memory IQ
             if (mem_iq[i].valid) begin
-                if (!mem_iq[i].rs1_ready) begin
-                    for (int j = 0; j < BYPASS_LENGTH; j++) begin
-                        if (bypass[j].valid && bypass[j].phys_rd == mem_iq[i].phys_rs1) begin
-                            mem_iq[i].rs1_value <= bypass[j].result;
-                            mem_iq[i].rs1_ready <= 1;
-                        end
-                    end
+                if (!mem_iq[i].rs1_ready && bypass_valid && 
+                    (bypass_phys_rd == mem_iq[i].phys_rs1)) begin
+                    mem_iq[i].rs1_value <= bypass_result;
+                    mem_iq[i].rs1_ready <= 1'b1;
                 end
                 
-                if (!mem_iq[i].rs2_ready && mem_iq[i].opcode == `OPCODE_STORE) begin
-                    for (int j = 0; j < BYPASS_LENGTH; j++) begin
-                        if (bypass[j].valid && bypass[j].phys_rd == mem_iq[i].phys_rs2) begin
-                            mem_iq[i].rs2_value <= bypass[j].result;
-                            mem_iq[i].rs2_ready <= 1;
-                        end
-                    end
+                if (!mem_iq[i].rs2_ready && bypass_valid && 
+                    (bypass_phys_rd == mem_iq[i].phys_rs2) && 
+                    (mem_iq[i].opcode == `OPCODE_STORE)) begin
+                    mem_iq[i].rs2_value <= bypass_result;
+                    mem_iq[i].rs2_ready <= 1'b1;
                 end
             end
             
-            // Similar wakeup logic for fp_iq
+            // Check bypass for FP IQ
             if (fp_iq[i].valid) begin
-                if (!fp_iq[i].rs1_ready) begin
-                    for (int j = 0; j < BYPASS_LENGTH; j++) begin
-                        if (bypass[j].valid && bypass[j].phys_rd == fp_iq[i].phys_rs1) begin
-                            fp_iq[i].rs1_value <= bypass[j].result;
-                            fp_iq[i].rs1_ready <= 1;
-                        end
-                    end
+                if (!fp_iq[i].rs1_ready && bypass_valid && 
+                    (bypass_phys_rd == fp_iq[i].phys_rs1)) begin
+                    fp_iq[i].rs1_value <= bypass_result;
+                    fp_iq[i].rs1_ready <= 1'b1;
                 end
                 
-                if (!fp_iq[i].rs2_ready) begin
-                    for (int j = 0; j < BYPASS_LENGTH; j++) begin
-                        if (bypass[j].valid && bypass[j].phys_rd == fp_iq[i].phys_rs2) begin
-                            fp_iq[i].rs2_value <= bypass[j].result;
-                            fp_iq[i].rs2_ready <= 1;
-                        end
-                    end
+                if (!fp_iq[i].rs2_ready && bypass_valid && 
+                    (bypass_phys_rd == fp_iq[i].phys_rs2)) begin
+                    fp_iq[i].rs2_value <= bypass_result;
+                    fp_iq[i].rs2_ready <= 1'b1;
                 end
+            end
+        end
+        
+        // Writeback to ROB - mark entries as done and update results
+        if (rob_wb_valid) begin
+            rob[rob_wb_idx].done <= 1'b1;
+            rob[rob_wb_idx].result <= rob_wb_result;
+            if (rob_wb_is_branch) begin
+                rob[rob_wb_idx].branch_taken <= rob_wb_branch_taken;
+                rob[rob_wb_idx].branch_target <= rob_wb_branch_target;
+            end
+        end
+        
+        // Commit stage - advance ROB head
+        if (rob_advance_head && !flush_pipeline) begin
+            rob[rob_head].valid <= 1'b0;  // Mark as committed
+            rob_head <= (rob_head + 1) % ROB_LENGTH;
+        end
+        
+        // Flush pipeline on misprediction - clears all speculative state
+        // Priority over commit to ensure correct recovery
+        if (flush_pipeline) begin
+            // Clear valid bit for all ROB entries except current head
+            // Use generate-like pattern that's synthesizable
+            for (int i = 0; i < ROB_LENGTH; i++) begin
+                // Only keep the head entry, clear all others
+                rob[i].valid <= (i == rob_head) ? rob[i].valid : 1'b0;
+            end
+            // Reset tail to head+1 to start fresh allocation
+            rob_tail <= (rob_head + 1) % ROB_LENGTH;
+            
+            // Clear all issue queue entries
+            for (int i = 0; i < IQ_LENGTH; i++) begin
+                int_iq[i].valid <= 1'b0;
+                mem_iq[i].valid <= 1'b0;
+                fp_iq[i].valid <= 1'b0;
             end
         end
     end

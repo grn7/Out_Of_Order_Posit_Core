@@ -11,9 +11,9 @@ module bp(
     output logic pred_taken                         // final prediction
 );
 
-    reg [1:0] state [0:PHT_LENGTH-1];   // states 00,01,10,11
+    logic [1:0] state [0:PHT_LENGTH-1];   // states 00,01,10,11
 
-    wire [PHT_IDX_W-1:0] pht_idx;
+    logic [PHT_IDX_W-1:0] pht_idx;
     assign pht_idx = fetch_pc[PHT_IDX_W-1:0];
 
     // main fsm 

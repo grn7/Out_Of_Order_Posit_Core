@@ -3,7 +3,7 @@ import general_defines::*;
 module btb(
     input  logic clk,
     input  logic rst,
-    input  logic [INSTR_MEM_IDX_W-1:0] fetch_pc, // pc from fetch stage
+    input  logic [INSTR_MEM_IDX_W-1:0] fetch_pc, // current pc being fetched (before fetch completes)
 
     output logic btb_hit,
     output logic [INSTR_MEM_IDX_W-1:0] btb_target,
@@ -14,15 +14,15 @@ module btb(
     input  logic [INSTR_MEM_IDX_W-1:0] update_target
 );
 
-    reg valid [0:BTB_LENGTH-1]; // valid bit for each btb entry
+    logic valid [0:BTB_LENGTH-1]; // valid bit for each btb entry
 
     // store pc (tag) and target
-    reg [INSTR_MEM_IDX_W-1:0] tag    [0:BTB_LENGTH-1];
-    reg [INSTR_MEM_IDX_W-1:0] target [0:BTB_LENGTH-1];
+    logic [INSTR_MEM_IDX_W-1:0] tag    [0:BTB_LENGTH-1];
+    logic [INSTR_MEM_IDX_W-1:0] target [0:BTB_LENGTH-1];
 
     // index into btb using pc
-    wire [BTB_IDX_W-1:0] fetch_idx;
-    wire [BTB_IDX_W-1:0] update_idx;
+    logic [BTB_IDX_W-1:0] fetch_idx;
+    logic [BTB_IDX_W-1:0] update_idx;
 
     assign fetch_idx  = fetch_pc[BTB_IDX_W-1:0];
     assign update_idx = update_pc[BTB_IDX_W-1:0];

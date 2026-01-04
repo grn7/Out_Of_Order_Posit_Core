@@ -1,6 +1,6 @@
 import general_defines::*;  
 
-module rob_controller(
+module rob(
     input logic clk,
     input logic rst,
     input logic valid,
@@ -44,61 +44,61 @@ module rob_controller(
 
 );
 
-rob_entry_t rob [0:ROB_LENGTH-1];
+rob_entry_t rob_array [0:ROB_LENGTH-1];
 
 always_ff @(posedge clk) begin
     if(rst) begin
         for(int i = 0; i < ROB_LENGTH; i++) begin
-            rob[i].valid <= 'b0;
-            rob[i].pc <= 'b0;
-            rob[i].logical_rd <= 'b0;
-            rob[i].phys_rd <= 'b0;
-            rob[i].result <= 'b0;
-            rob[i].done <= 'b0;
-            rob[i].is_store <= 'b0;
-            rob[i].is_load <= 'b0;
-            rob[i].opcode <= 'b0;
-            rob[i].funct3 <= 'b0;
-            rob[i].funct7 <= 'b0;
-            rob[i].is_branch <= 'b0;
-            rob[i].pred_taken <= 'b0;
-            rob[i].pred_target <= 'b0;
+            rob_array[i].valid <= 'b0;
+            rob_array[i].pc <= 'b0;
+            rob_array[i].logical_rd <= 'b0;
+            rob_array[i].phys_rd <= 'b0;
+            rob_array[i].result <= 'b0;
+            rob_array[i].done <= 'b0;
+            rob_array[i].is_store <= 'b0;
+            rob_array[i].is_load <= 'b0;
+            rob_array[i].opcode <= 'b0;
+            rob_array[i].funct3 <= 'b0;
+            rob_array[i].funct7 <= 'b0;
+            rob_array[i].is_branch <= 'b0;
+            rob_array[i].pred_taken <= 'b0;
+            rob_array[i].pred_target <= 'b0;
         end
     end
     else if (rob_write) begin
-        rob[rob_tail].valid <= valid;
-        rob[rob_tail].pc <= pc;
-        rob[rob_tail].logical_rd <= logical_rd;
-        rob[rob_tail].phys_rd <= phys_rd;
-        rob[rob_tail].result <= result;
-        rob[rob_tail].done <= done;
-        rob[rob_tail].is_store <= is_store;
-        rob[rob_tail].is_load <= is_load;
-        rob[rob_tail].opcode <= opcode;
-        rob[rob_tail].funct3 <= funct3;
-        rob[rob_tail].funct7 <= funct7;
-        rob[rob_tail].is_branch <= is_branch;
-        rob[rob_tail].pred_taken <= pred_taken;
-        rob[rob_tail].pred_target <= pred_target;
+        rob_array[rob_tail].valid <= valid;
+        rob_array[rob_tail].pc <= pc;
+        rob_array[rob_tail].logical_rd <= logical_rd;
+        rob_array[rob_tail].phys_rd <= phys_rd;
+        rob_array[rob_tail].result <= result;
+        rob_array[rob_tail].done <= done;
+        rob_array[rob_tail].is_store <= is_store;
+        rob_array[rob_tail].is_load <= is_load;
+        rob_array[rob_tail].opcode <= opcode;
+        rob_array[rob_tail].funct3 <= funct3;
+        rob_array[rob_tail].funct7 <= funct7;
+        rob_array[rob_tail].is_branch <= is_branch;
+        rob_array[rob_tail].pred_taken <= pred_taken;
+        rob_array[rob_tail].pred_target <= pred_target;
         
     end
 end
 
 //asynchronous data read 
-assign valid_out = rob[rob_head].valid;
-assign pc_out = rob[rob_head].pc;
-assign logical_rd_out = rob[rob_head].logical_rd;
-assign phys_rd_out = rob[rob_head].phys_rd;
-assign result_out = rob[rob_head].result;
-assign done_out = rob[rob_head].done;
-assign is_store_out = rob[rob_head].is_store;
-assign is_load_out = rob[rob_head].is_load;
-assign opcode_out = rob[rob_head].opcode;
-assign funct3_out = rob[rob_head].funct3;
-assign funct7_out = rob[rob_head].funct7;
-assign is_branch_out = rob[rob_head].is_branch;
-assign pred_taken_out = rob[rob_head].pred_taken;
-assign pred_target_out = rob[rob_head].pred_target;
+assign valid_out = rob_array[rob_head].valid;
+assign pc_out = rob_array[rob_head].pc;
+assign logical_rd_out = rob_array[rob_head].logical_rd;
+assign phys_rd_out = rob_array[rob_head].phys_rd;
+assign result_out = rob_array[rob_head].result;
+assign done_out = rob_array[rob_head].done;
+assign is_store_out = rob_array[rob_head].is_store;
+assign is_load_out = rob_array[rob_head].is_load;
+assign opcode_out = rob_array[rob_head].opcode;
+assign funct3_out = rob_array[rob_head].funct3;
+assign funct7_out = rob_array[rob_head].funct7;
+assign is_branch_out = rob_array[rob_head].is_branch;
+assign pred_taken_out = rob_array[rob_head].pred_taken;
+assign pred_target_out = rob_array[rob_head].pred_target;
 assign flush = 1'b0;
 assign redirect_pc = '0;
     

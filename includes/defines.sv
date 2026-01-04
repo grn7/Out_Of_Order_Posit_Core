@@ -57,6 +57,8 @@ package general_defines;
         logic is_branch;
         logic pred_taken;
         logic [INSTR_MEM_IDX_W-1:0] pred_target;
+        logic branch_taken;                     // actual branch outcome
+        logic [INSTR_MEM_IDX_W-1:0] branch_target;  // actual branch target
     } rob_entry_t;
 
     //Issue queue entry structure
