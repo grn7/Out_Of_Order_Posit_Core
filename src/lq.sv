@@ -9,6 +9,7 @@ module lq #(
 
     input  logic              enq_valid,   // load issue
     input  logic [ROB_W-1:0]  enq_rob,
+    input  logic [ROB_W-1:0]  enq_phys_rd,
     input  logic [ADDR_W-1:0] enq_addr,
 
     input  logic              mem_resp,    // memory response
@@ -16,12 +17,14 @@ module lq #(
 
     output logic              lq_done,     // load complete
     output logic [ROB_W-1:0]  lq_rob,
+    output logic [ROB_W-1:0]  lq_phys_rd,
     output logic [DATA_W-1:0] lq_data
 );
 
     typedef struct packed {
         logic valid;
         logic [ROB_W-1:0] rob;
+        logic [ROB_W-1:0] phys_rd;
         logic [ADDR_W-1:0] addr;
     } lq_entry_t;
 
@@ -48,6 +51,7 @@ module lq #(
             for (int i = 0; i < LQ_SIZE; i++) begin
                 lq[i].valid <= 1'b0;
                 lq[i].rob   <= '0;
+                lq[i].phys_rd <= '0;
                 lq[i].addr  <= '0;
             end
         end else begin
@@ -55,6 +59,7 @@ module lq #(
             if (enq_valid && !lq_full) begin
                 lq[tail].valid <= 1'b1;
                 lq[tail].rob   <= enq_rob;
+                lq[tail].phys_rd <= enq_phys_rd;
                 lq[tail].addr  <= enq_addr;
                 tail <= next_tail;
             end
@@ -70,6 +75,7 @@ module lq #(
     // Output assignments
     assign lq_done = mem_resp && !lq_empty;
     assign lq_rob  = lq[head].rob;
+    assign lq_phys_rd = lq[head].phys_rd;
     assign lq_data = mem_data;
 
 endmodule

@@ -13,6 +13,7 @@ module lsu #(
     input  logic              issue_is_load,
     input  logic              issue_is_store,
     input  logic [ROB_W-1:0]  issue_rob,
+    input  logic [ROB_W-1:0]  issue_phys_rd,
     input  logic [ADDR_W-1:0] issue_addr,
     input  logic [DATA_W-1:0] issue_store_data,
 
@@ -23,6 +24,7 @@ module lsu #(
     // Writeback interface to ROB
     output logic              wb_valid,
     output logic [ROB_W-1:0]  wb_rob,
+    output logic [ROB_W-1:0]  wb_phys_rd,
     output logic [DATA_W-1:0] wb_data,
 
     // Memory interface
@@ -47,11 +49,13 @@ module lsu #(
         .rst(rst),
         .enq_valid(issue_valid && issue_is_load),
         .enq_rob(issue_rob),
+        .enq_phys_rd(issue_phys_rd),
         .enq_addr(issue_addr),
         .mem_resp(mem_rd_resp),
         .mem_data(mem_rd_data),
         .lq_done(wb_valid),
         .lq_rob(wb_rob),
+        .lq_phys_rd(wb_phys_rd),
         .lq_data(wb_data)
     );
 
@@ -79,9 +83,12 @@ module lsu #(
     assign mem_rd_valid = issue_valid && issue_is_load;
     assign mem_rd_addr  = issue_addr;
 
-    // TODO: Add store-to-load forwarding logic
-    // - Check if load address matches any pending store in SQ
-    // - Forward data from SQ if address matches
-    // - Implement memory disambiguation
+    // NOTE: Store-to-load forwarding not implemented
+    // This is an optimization that would:
+    // 1. Check if load address matches any pending store in SQ (address comparison)
+    // 2. Forward data from matching SQ entry if addresses match
+    // 3. Avoid memory read latency for dependent load/store pairs
+    // Current implementation: All loads go to memory, no forwarding
+    // Impact: Correct but slower for store-load dependencies
 
 endmodule

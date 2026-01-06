@@ -47,6 +47,7 @@ package general_defines;
         logic [INSTR_MEM_IDX_W-1:0] pc;
         logic [ARCH_REG_IDX_W-1:0] logical_rd;
         logic [PHYS_REG_IDX_W-1:0] phys_rd;
+        logic [PHYS_REG_IDX_W-1:0] old_phys_rd;  // Previous physical register mapping (for free list return)
         logic [INT_DATA_W-1:0] result;
         logic done;
         logic is_store;

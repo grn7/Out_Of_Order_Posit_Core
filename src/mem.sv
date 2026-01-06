@@ -21,11 +21,15 @@ module mem #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            rd_resp <= 1'b0;                    // clear read response
+            rd_resp   <= 1'b0;                  // clear read response
+            rd_addr_q <= '0;
+            rd_data   <= '0;
         end else begin
             rd_resp   <= rd_valid;              // propagate read valid
             rd_addr_q <= rd_addr;               // latch address
-            rd_data   <= mem_array[rd_addr_q[$clog2(DEPTH)-1:0]]; // read data
+            if (rd_valid) begin
+                rd_data <= mem_array[rd_addr[$clog2(DEPTH)-1:0]]; // read data
+            end
         end
     end
 

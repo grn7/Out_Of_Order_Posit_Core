@@ -28,7 +28,7 @@ module btb(
     assign update_idx = update_pc[BTB_IDX_W-1:0];
 
     // lookup logic
-    always @(*) begin
+    always_comb begin
         if(valid[fetch_idx] && tag[fetch_idx] == fetch_pc) begin
             btb_hit    = 1'b1;
             btb_target = target[fetch_idx];
@@ -40,7 +40,7 @@ module btb(
     end
 
     // update btb on branch resolution
-    always @(posedge clk or posedge rst) begin
+    always_ff @(posedge clk) begin
         if(rst) begin
             for(int i = 0; i < BTB_LENGTH; i++) begin
                 valid[i]  <= 1'b0;

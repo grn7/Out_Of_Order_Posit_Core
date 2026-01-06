@@ -5,11 +5,13 @@ module commit (
     input logic rst,
     
     // ROB interface - read head entry
+    input logic [ROB_IDX_W-1:0]        rob_head_idx,
     input logic                        rob_head_valid,
     input logic                        rob_head_done,
     input logic [INSTR_MEM_IDX_W-1:0]  rob_head_pc,
     input logic [ARCH_REG_IDX_W-1:0]   rob_head_logical_rd,
     input logic [PHYS_REG_IDX_W-1:0]   rob_head_phys_rd,
+    input logic [PHYS_REG_IDX_W-1:0]   rob_head_old_phys_rd,
     input logic [INT_DATA_W-1:0]       rob_head_result,
     input logic [6:0]                  rob_head_opcode,
     input logic [2:0]                  rob_head_funct3,
@@ -26,7 +28,7 @@ module commit (
     output logic                       rob_commit,
     output logic                       rob_advance_head,
     
-    // Architectural register file (ARF) update
+    // Architectural register file update
     output logic                       arf_we,
     output logic [ARCH_REG_IDX_W-1:0]  arf_waddr,
     output logic [INT_DATA_W-1:0]      arf_wdata,
@@ -44,20 +46,13 @@ module commit (
     
     // Free list management (for recovery)
     output logic                       free_phys_reg,
-    output logic [PHYS_REG_IDX_W-1:0]  freed_phys_reg,
-    
-    // Statistics/Debug
-    output logic [63:0]                commit_count,
-    output logic [63:0]                branch_mispredictions
+    output logic [PHYS_REG_IDX_W-1:0]  freed_phys_reg
 );
 
-    logic [63:0] commit_counter;
-    logic [63:0] mispred_counter;
-    
     logic misprediction_detected;
     logic can_commit;
     
-    // Check if instruction at ROB head can commit
+    // to check if instruction at ROB head can commit
     assign can_commit = rob_head_valid && rob_head_done;
     
     // Detect branch misprediction
@@ -65,7 +60,7 @@ module commit (
         misprediction_detected = 1'b0;
         
         if (can_commit && rob_head_is_branch) begin
-            // Check if prediction matches actual outcome
+            // to check if prediction matches actual outcome
             if (rob_head_pred_taken != rob_head_branch_taken) begin
                 misprediction_detected = 1'b1;
             end else if (rob_head_branch_taken && 
@@ -106,7 +101,7 @@ module commit (
             // Commit store to memory
             if (rob_head_is_store) begin
                 commit_store = 1'b1;
-                // commit_rob_idx would be rob_head index (needs to be passed from top)
+                commit_rob_idx = rob_head_idx;  // Pass actual ROB head index
             end
             
             // Handle branch misprediction
@@ -129,29 +124,14 @@ module commit (
                 update_bp_taken = rob_head_branch_taken;
             end
             
-            // Note: Free list management for old physical register
-            // This would require tracking the old physical register mapping
-            // which should come from ROB or rename table snapshot
-        end
-    end
-    
-    // Statistics counters
-    always_ff @(posedge clk) begin
-        if (rst) begin
-            commit_counter <= 64'b0;
-            mispred_counter <= 64'b0;
-        end else begin
-            if (rob_commit) begin
-                commit_counter <= commit_counter + 1;
-            end
-            
-            if (misprediction_detected) begin
-                mispred_counter <= mispred_counter + 1;
+            // Free list management - return old physical register
+            // When committing an instruction that writes to a register (not x0),
+            // return the old physical register mapping to the free list
+            if (rob_head_logical_rd != 0) begin
+                free_phys_reg = 1'b1;
+                freed_phys_reg = rob_head_old_phys_rd;
             end
         end
     end
-    
-    assign commit_count = commit_counter;
-    assign branch_mispredictions = mispred_counter;
 
 endmodule

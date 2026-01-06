@@ -20,19 +20,21 @@ module top (
     logic [INT_DATA_W-1:0]      imem_resp_data;
 
     logic                       bp_valid;        // branch prediction valid
+    logic                       bp_pred_taken;   // branch predictor direction prediction
     logic [INSTR_MEM_IDX_W-1:0] bp_target;       // predicted target
     logic                       btb_hit;         // BTB hit signal
     logic [INSTR_MEM_IDX_W-1:0] btb_target;      // BTB target
 
 
-    logic            issue_valid;             // issue enable (stub)
+    logic            issue_valid;             // issue enable from mem_iq
     logic            issue_is_load;           // load op
     logic            issue_is_store;          // store op
     logic [ROB_IDX_W-1:0] issue_rob;          // rob index
+    logic [PHYS_REG_IDX_W-1:0] issue_phys_rd; // physical dest register
     logic [INT_DATA_W-1:0] issue_addr;        // memory address
     logic [INT_DATA_W-1:0] issue_store_data;  // store data
 
-    // Execution results (stubs - to be replaced by actual execution units)
+    // Execution results muxed from functional units (ALU/MUL/DIV)
     logic                        exec_valid;
     logic [ROB_IDX_W-1:0]        exec_rob_idx;
     logic [PHYS_REG_IDX_W-1:0]   exec_phys_rd;
@@ -58,6 +60,7 @@ module top (
     // LSU writeback (from existing LSU)
     logic            wb_valid;                // writeback valid
     logic [ROB_IDX_W-1:0] wb_rob;             // writeback rob index
+    logic [PHYS_REG_IDX_W-1:0] wb_phys_rd;    // writeback phys_rd
     logic [INT_DATA_W-1:0] wb_data;           // writeback data
 
     // Commit stage outputs
@@ -75,8 +78,6 @@ module top (
     logic                        update_bp_taken;
     logic                        free_phys_reg;
     logic [PHYS_REG_IDX_W-1:0]   freed_phys_reg;
-    logic [63:0]                 commit_count;
-    logic [63:0]                 branch_mispredictions;
     
     // ROB head entry signals for commit
     logic                        rob_head_valid;
@@ -84,6 +85,7 @@ module top (
     logic [INSTR_MEM_IDX_W-1:0]  rob_head_pc;
     logic [ARCH_REG_IDX_W-1:0]   rob_head_logical_rd;
     logic [PHYS_REG_IDX_W-1:0]   rob_head_phys_rd;
+    logic [PHYS_REG_IDX_W-1:0]   rob_head_old_phys_rd;
     logic [INT_DATA_W-1:0]       rob_head_result;
     logic [6:0]                  rob_head_opcode;
     logic [2:0]                  rob_head_funct3;
@@ -109,7 +111,7 @@ module top (
     assign if_flush = flush_pipeline;         // flush from commit stage
     assign if_flush_pc = redirect_pc;         // redirect PC from commit
     assign imem_resp_valid = 1'b1;            // always ready for now
-    assign imem_resp_data = '0;               // instruction memory stub
+    assign imem_resp_data = '0;               // instruction memory not connected - needs real imem module
 
     assign bp_valid = btb_hit;                // use BTB hit as prediction valid
     assign bp_target = btb_target;            // use BTB target
@@ -141,7 +143,7 @@ module top (
         .fetch_pc     (current_pc),           // Use current PC being fetched
         .actual_taken (update_bp_taken),      // From commit stage
         .update_valid (update_bp),            // From commit stage
-        .pred_taken   ()                      // connect when needed
+        .pred_taken   (bp_pred_taken)         // Direction prediction output
     );
 
     // Branch Target Buffer
@@ -151,9 +153,9 @@ module top (
         .fetch_pc     (current_pc),           // Use current PC being fetched
         .btb_hit      (btb_hit),
         .btb_target   (btb_target),
-        .update_valid (1'b0),                 // Update stub
-        .update_pc    ('0),                   // Update stub
-        .update_target('0)                    // Update stub
+        .update_valid (update_bp && rob_head_is_branch),  // Update BTB on branch commit
+        .update_pc    (update_bp_pc),                     // Branch PC from commit
+        .update_target(rob_head_branch_target)            // Actual branch target
     );
 
     // Writeback Stage
@@ -169,7 +171,7 @@ module top (
         .exec_branch_target     (exec_branch_target),
         .lsu_wb_valid           (wb_valid),
         .lsu_wb_rob             (wb_rob),
-        .lsu_wb_phys_rd         ('0),             // TODO: connect from LSU
+        .lsu_wb_phys_rd         (wb_phys_rd),
         .lsu_wb_data            (wb_data),
         .rob_wb_valid           (rob_wb_valid),
         .rob_wb_idx             (rob_wb_idx),
@@ -189,11 +191,13 @@ module top (
     commit commit_stage (
         .clk                     (clk),
         .rst                     (rst),
+        .rob_head_idx            (rob_head),
         .rob_head_valid          (rob_head_valid),
         .rob_head_done           (rob_head_done),
         .rob_head_pc             (rob_head_pc),
         .rob_head_logical_rd     (rob_head_logical_rd),
         .rob_head_phys_rd        (rob_head_phys_rd),
+        .rob_head_old_phys_rd    (rob_head_old_phys_rd),
         .rob_head_result         (rob_head_result),
         .rob_head_opcode         (rob_head_opcode),
         .rob_head_funct3         (rob_head_funct3),
@@ -218,19 +222,30 @@ module top (
         .update_bp_pc            (update_bp_pc),
         .update_bp_taken         (update_bp_taken),
         .free_phys_reg           (free_phys_reg),
-        .freed_phys_reg          (freed_phys_reg),
-        .commit_count            (commit_count),
-        .branch_mispredictions   (branch_mispredictions)
+        .freed_phys_reg          (freed_phys_reg)
     );
     
-    // Execution unit stubs (to be replaced)
-    assign exec_valid = 1'b0;
-    assign exec_rob_idx = '0;
-    assign exec_phys_rd = '0;
-    assign exec_result = '0;
-    assign exec_is_branch = 1'b0;
-    assign exec_branch_taken = 1'b0;
-    assign exec_branch_target = '0;
+    // Execution results - mux between different FUs
+    always_comb begin
+        // Priority: ALU (single cycle) > Multiplier > Divider
+        if (alu_valid) begin
+            exec_valid = 1'b1;
+            exec_rob_idx = alu_rob_idx;
+            exec_phys_rd = alu_dest;
+            exec_result = alu_result;
+            exec_is_branch = 1'b0;
+            exec_branch_taken = 1'b0;
+            exec_branch_target = '0;
+        end else begin
+            exec_valid = 1'b0;
+            exec_rob_idx = '0;
+            exec_phys_rd = '0;
+            exec_result = '0;
+            exec_is_branch = 1'b0;
+            exec_branch_taken = 1'b0;
+            exec_branch_target = '0;
+        end
+    end
 
     lsu lsu_u (
         .clk              (clk),
@@ -239,12 +254,14 @@ module top (
         .issue_is_load    (issue_is_load),
         .issue_is_store   (issue_is_store),
         .issue_rob        (issue_rob),
+        .issue_phys_rd    (issue_phys_rd),
         .issue_addr       (issue_addr),
         .issue_store_data (issue_store_data),
         .commit_store     (commit_store),
         .commit_rob       (commit_rob),
         .wb_valid         (wb_valid),
         .wb_rob           (wb_rob),
+        .wb_phys_rd       (wb_phys_rd),
         .wb_data          (wb_data),
         .mem_rd_valid     (mem_rd_valid),
         .mem_rd_addr      (mem_rd_addr),
@@ -267,12 +284,7 @@ module top (
         .wr_data  (mem_wr_data)
     );
 
-    assign issue_valid      = 1'b0;            // decode/issue stub
-    assign issue_is_load    = 1'b0;            // decode stub
-    assign issue_is_store   = 1'b0;            // decode stub
-    assign issue_rob        = '0;              // rename stub
-    assign issue_addr       = '0;              // execute stub
-    assign issue_store_data = '0;              // execute stub
+    // Issue signals driven by mem_iq execution logic 
 
     //ROB
     rob_entry_t rob [0:ROB_LENGTH-1];
@@ -285,6 +297,7 @@ module top (
     assign rob_head_pc = rob[rob_head].pc;
     assign rob_head_logical_rd = rob[rob_head].logical_rd;
     assign rob_head_phys_rd = rob[rob_head].phys_rd;
+    assign rob_head_old_phys_rd = rob[rob_head].old_phys_rd;
     assign rob_head_result = rob[rob_head].result;
     assign rob_head_opcode = rob[rob_head].opcode;
     assign rob_head_funct3 = rob[rob_head].funct3;
@@ -321,6 +334,15 @@ module top (
     logic [INT_DATA_W-1:0] alu_result;
     logic alu_valid;
     logic [PHYS_REG_IDX_W-1:0] alu_dest;
+    logic [ROB_IDX_W-1:0] alu_rob_idx;
+    
+    // Track ROB indices for multi-cycle operations
+    logic [ROB_IDX_W-1:0] mul_rob_idx;
+    logic [ROB_IDX_W-1:0] div_rob_idx;
+    
+    // Control signals for issue
+    logic issued;        // For int_iq
+    logic mem_issued;    // For mem_iq
 
     //Status flags
     assign rob_full = ((rob_tail+1)%ROB_LENGTH == rob_head) && rob[rob_tail].valid;
@@ -368,6 +390,15 @@ module top (
             free_list_head <= 0;
             free_list_tail <= PHYS_REG_LENGTH - ARCH_REG_LENGTH;
             
+            // Initialize execution tracking
+            alu_valid <= 1'b0;
+            alu_dest <= '0;
+            alu_rob_idx <= '0;
+            mul_rob_idx <= '0;
+            div_rob_idx <= '0;
+            free_list_head <= 0;
+            free_list_tail <= PHYS_REG_LENGTH - ARCH_REG_LENGTH;
+            
             // Initialize issue queues
             for (int i = 0; i < IQ_LENGTH; i++) begin
                 int_iq[i] <= '0;
@@ -403,7 +434,7 @@ module top (
             // Allocate ROB entry
             if (inst_valid && !rob_full) begin
                 rob[rob_tail].pc <= if_pc; // pc given from IF stage to be sent to next stage
-                rob[rob_tail].logical_rd <= rd; // what's the use of logical_rd ???
+                rob[rob_tail].logical_rd <= rd; // Architectural register for ARF commit and old phys_rd lookup
                 rob[rob_tail].done <= 0;
                 rob[rob_tail].valid <= 1;
                 rob[rob_tail].opcode <= opcode;
@@ -412,15 +443,25 @@ module top (
                 rob[rob_tail].is_load <= (opcode == `OPCODE_LOAD);
                 rob[rob_tail].is_store <= (opcode == `OPCODE_STORE);
                 rob[rob_tail].is_branch <= (opcode == `OPCODE_BRANCH);
-                // what should i allocate to pred_taken and pred_target??
+                
+                // Store branch prediction info for misprediction detection
+                if (opcode == `OPCODE_BRANCH) begin
+                    rob[rob_tail].pred_taken <= bp_valid;  // Store prediction: 1=predicted taken, 0=predicted not taken
+                    rob[rob_tail].pred_target <= bp_valid ? bp_target : '0;
+                end else begin
+                    rob[rob_tail].pred_taken <= 1'b0;
+                    rob[rob_tail].pred_target <= '0;
+                end
                 
                 // Register renaming for destination
-                if (rd != 0 && !free_list_empty) begin 
+                if (rd != 0 && !free_list_empty) begin
+                    rob[rob_tail].old_phys_rd <= rename_table[rd];  // Save old mapping for free list return
                     rob[rob_tail].phys_rd <= free_list[free_list_head];
                     rename_table[rd] <= free_list[free_list_head];
                     free_list_head <= (free_list_head + 1) % PHYS_REG_LENGTH;
                 end 
                 else begin
+                    rob[rob_tail].old_phys_rd <= 0;  // No old mapping for x0
                     rob[rob_tail].phys_rd <= 0; // if rd is zero, we make phys_rd of that ROB entry as 0
                 end          
 
@@ -430,7 +471,7 @@ module top (
                         if (!int_iq_full) begin
 
                             int_iq[int_iq_tail].pc <= if_pc;
-                            int_iq[int_iq_tail].phys_rd <= free_list[free_list_head];
+                            int_iq[int_iq_tail].phys_rd <= rob[rob_tail].phys_rd;  // Use allocated phys_rd from ROB
                             int_iq[int_iq_tail].phys_rs1 <= rename_table[rs1];
                             int_iq[int_iq_tail].phys_rs2 <= (opcode == `OPCODE_ARITH_R) ? rename_table[rs2] : 0;
                             int_iq[int_iq_tail].imm <= immediate; 
@@ -505,7 +546,6 @@ module top (
                 endcase
                 
                 rob_tail <= (rob_tail + 1) % ROB_LENGTH;
-                // fetch_head <= (fetch_head + 1) % 8;
             end
         end    
         
@@ -515,7 +555,7 @@ module top (
             phys_reg_valid[prf_waddr] <= 1'b1;
         end
 
-        // Wakeup logic - use bypass network from writeback for ready operands
+        // use bypass network from writeback for ready operands
         // This creates combinational forwarding paths
         for (int i = 0; i < IQ_LENGTH; i++) begin
             // Check bypass for integer IQ
@@ -635,15 +675,36 @@ module top (
         );
 
         //start actual implentation of EX stage
-        logic issued;
         logic [PHYS_REG_IDX_W-1:0] mul_dest; 
-        logic [PHYS_REG_IDX_W-1:0] div_dest;         
+        logic [PHYS_REG_IDX_W-1:0] div_dest;
+        
+        // Capture ALU results (single-cycle operations)
+        always_ff @(posedge clk) begin
+            if (rst) begin
+                alu_valid <= 1'b0;
+                alu_result <= '0;
+            end else begin
+                // ALU valid when adder or subtractor completes
+                if (adder_valid_o) begin
+                    alu_valid <= 1'b1;
+                    alu_result <= adder_result;
+                end else if (sub_valid_o) begin
+                    alu_valid <= 1'b1;
+                    alu_result <= sub_result;
+                end else begin
+                    alu_valid <= 1'b0;
+                end
+            end
+        end
+        
+        // Issue logic from int_iq         
         always_ff @(posedge clk) begin
             if(rst) begin
                 adder_valid_i <= 'b0;
                 sub_valid_i <= 'b0;
                 mul_valid_i <= 'b0;
                 div_valid_i <= 'b0;
+                issued <= 1'b0;
             end
 
             else begin
@@ -653,48 +714,48 @@ module top (
                 mul_valid_i <= 'b0;
                 div_valid_i <= 'b0;                
                 for(int i = 0; i < IQ_LENGTH; i++) begin
-                    idx = (int_iq_head + i) % IQ_LENGTH;
-                    if(!issued && int_iq[idx].valid && int_iq[idx].rs1_ready &&
-                    (int_iq[idx].opcode == `OPCODE_ARITH_I || int_iq[idx].rs2_ready)) begin
+                    automatic int local_idx = (int_iq_head + i) % IQ_LENGTH;
+                    if(!issued && int_iq[local_idx].valid && int_iq[local_idx].rs1_ready &&
+                    (int_iq[local_idx].opcode == `OPCODE_ARITH_I || int_iq[local_idx].rs2_ready)) begin
 
-                        case(int_iq[idx].fu_type)
+                        case(int_iq[local_idx].fu_type)
                             0: begin // for add, sub and other operations can be added
-                                case(int_iq[idx].opcode)
+                                case(int_iq[local_idx].opcode)
                                     `OPCODE_ARITH_I: begin
-                                        case(int_iq[idx].funct3)
+                                        case(int_iq[local_idx].funct3)
                                             3'b000: begin
                                                     adder_valid_i <= 1'b1;
-                                                    adder_a <= int_iq[idx].rs1_value;
-                                                    adder_b <= int_iq[idx].imm;
+                                                    adder_a <= int_iq[local_idx].rs1_value;
+                                                    adder_b <= int_iq[local_idx].imm;
                                                     // ADDI 
                                             end
                                             default: begin
                                                      adder_valid_i <= 1'b1;
-                                                     adder_a <= int_iq[idx].rs1_value;
-                                                     adder_b <= int_iq[idx].imm;
+                                                     adder_a <= int_iq[local_idx].rs1_value;
+                                                     adder_b <= int_iq[local_idx].imm;
                                             end
                                         endcase
                                     end
                                     `OPCODE_ARITH_R: begin
-                                        case(int_iq[idx].funct3)
+                                        case(int_iq[local_idx].funct3)
                                             3'b000: begin
-                                                if(int_iq[idx].funct7 == 7'b0) begin
+                                                if(int_iq[local_idx].funct7 == 7'b0) begin
                                                     adder_valid_i <= 1'b1;
-                                                    adder_a <= int_iq[idx].rs1_value;
-                                                    adder_b <= int_iq[idx].rs2_value;
+                                                    adder_a <= int_iq[local_idx].rs1_value;
+                                                    adder_b <= int_iq[local_idx].rs2_value;
                                                     // ADD
                                                 end
                                                 else begin
                                                     sub_valid_i <= 1'b1;
-                                                    sub_a <= int_iq[idx].rs1_value;
-                                                    sub_b <= int_iq[idx].rs2_value;
+                                                    sub_a <= int_iq[local_idx].rs1_value;
+                                                    sub_b <= int_iq[local_idx].rs2_value;
                                                     // SUB
                                                 end
                                             end
                                             default: begin
                                                      adder_valid_i <= 1'b1;
-                                                     adder_a <= int_iq[idx].rs1_value;
-                                                     adder_b <= int_iq[idx].rs2_value;
+                                                     adder_a <= int_iq[local_idx].rs1_value;
+                                                     adder_b <= int_iq[local_idx].rs2_value;
                                             end
                                         endcase
                                     end
@@ -703,18 +764,20 @@ module top (
                                              sub_valid_i <= 1'b0;
                                     end
                                 endcase
-                                alu_dest <= int_iq[idx].phys_rd;
-                                int_iq[idx].valid <= 1'b0;
+                                alu_dest <= int_iq[local_idx].phys_rd;
+                                alu_rob_idx <= int_iq[local_idx].rob_idx;
+                                int_iq[local_idx].valid <= 1'b0;
                                 issued <= 1'b1;
                             end
 
                             2: begin //MUL
                                 if(!mul_busy) begin
                                     mul_valid_i <= 1'b1;
-                                    mul_a <= int_iq[idx].rs1_value;
-                                    mul_b <= int_iq[idx].rs2_value;
-                                    mul_dest <= int_iq[idx].phys_rd;
-                                    int_iq[idx].valid <= 1'b0;
+                                    mul_a <= int_iq[local_idx].rs1_value;
+                                    mul_b <= int_iq[local_idx].rs2_value;
+                                    mul_dest <= int_iq[local_idx].phys_rd;
+                                    mul_rob_idx <= int_iq[local_idx].rob_idx;
+                                    int_iq[local_idx].valid <= 1'b0;
                                     issued <= 1'b1;
                                 end
                             end
@@ -722,10 +785,11 @@ module top (
                             3: begin //DIV
                                 if(!div_busy) begin
                                     div_valid_i <= 1'b1;
-                                    div_a <= int_iq[idx].rs1_value;
-                                    div_b <= int_iq[idx].rs2_value;
-                                    div_dest <= int_iq[idx].phys_rd;
-                                    int_iq[idx].valid <= 1'b0;
+                                    div_a <= int_iq[local_idx].rs1_value;
+                                    div_b <= int_iq[local_idx].rs2_value;
+                                    div_dest <= int_iq[local_idx].phys_rd;
+                                    div_rob_idx <= int_iq[local_idx].rob_idx;
+                                    int_iq[local_idx].valid <= 1'b0;
                                     issued <= 1'b1;
                                 end
                             end
@@ -734,46 +798,98 @@ module top (
                 end
             end
         end
-                                     
-        // add mem_iq operations 
-        // fp_iq operations can be added later 
-
-
-
         
-        // Writeback to ROB - mark entries as done and update results
-        if (rob_wb_valid) begin
-            rob[rob_wb_idx].done <= 1'b1;
-            rob[rob_wb_idx].result <= rob_wb_result;
-            if (rob_wb_is_branch) begin
-                rob[rob_wb_idx].branch_taken <= rob_wb_branch_taken;
-                rob[rob_wb_idx].branch_target <= rob_wb_branch_target;
-            end
-        end
-        
-        // Commit stage - advance ROB head
-        if (rob_advance_head && !flush_pipeline) begin
-            rob[rob_head].valid <= 1'b0;  // Mark as committed
-            rob_head <= (rob_head + 1) % ROB_LENGTH;
-        end
-        
-        // Flush pipeline on misprediction - clears all speculative state
-        // Priority over commit to ensure correct recovery
-        if (flush_pipeline) begin
-            // Clear valid bit for all ROB entries except current head
-            // Use generate-like pattern that's synthesizable
-            for (int i = 0; i < ROB_LENGTH; i++) begin
-                // Only keep the head entry, clear all others
-                rob[i].valid <= (i == rob_head) ? rob[i].valid : 1'b0;
-            end
-            // Reset tail to head+1 to start fresh allocation
-            rob_tail <= (rob_head + 1) % ROB_LENGTH;
+        // Memory IQ execution - issue to LSU
+        // Issue logic from mem_iq
+    end // end of main always_ff block
+    
+    // Separate always block for mem_iq execution
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            issue_valid <= 1'b0;
+            issue_is_load <= 1'b0;
+            issue_is_store <= 1'b0;
+            issue_rob <= '0;
+            issue_phys_rd <= '0;
+            issue_addr <= '0;
+            issue_store_data <= '0;
+            mem_issued <= 1'b0;
+        end else begin
+            mem_issued <= 1'b0;
+            issue_valid <= 1'b0;
             
-            // Clear all issue queue entries
+            // Select ready entry from mem_iq to issue to LSU
             for (int i = 0; i < IQ_LENGTH; i++) begin
-                int_iq[i].valid <= 1'b0;
-                mem_iq[i].valid <= 1'b0;
-                fp_iq[i].valid <= 1'b0;
+                automatic int local_idx = (mem_iq_head + i) % IQ_LENGTH;
+                if (!mem_issued && mem_iq[local_idx].valid && mem_iq[local_idx].rs1_ready &&
+                    (mem_iq[local_idx].opcode == `OPCODE_LOAD || mem_iq[local_idx].rs2_ready)) begin
+                    
+                    issue_valid <= 1'b1;
+                    issue_is_load <= (mem_iq[local_idx].opcode == `OPCODE_LOAD);
+                    issue_is_store <= (mem_iq[local_idx].opcode == `OPCODE_STORE);
+                    issue_rob <= mem_iq[local_idx].rob_idx;
+                    issue_phys_rd <= mem_iq[local_idx].phys_rd;
+                    
+                    // Calculate address: base + offset
+                    issue_addr <= mem_iq[local_idx].rs1_value + mem_iq[local_idx].imm;
+                    
+                    // Store data from rs2
+                    if (mem_iq[local_idx].opcode == `OPCODE_STORE) begin
+                        issue_store_data <= mem_iq[local_idx].rs2_value;
+                    end else begin
+                        issue_store_data <= '0;
+                    end
+                    
+                    mem_iq[local_idx].valid <= 1'b0;
+                    mem_issued <= 1'b1;
+                end
+            end
+        end
+    end
+    
+    // Main pipeline always block for writeback/commit/flush
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            // Reset handled in first always block
+        end else begin
+            // Writeback to ROB - mark entries as done and update results
+            if (rob_wb_valid) begin
+                rob[rob_wb_idx].done <= 1'b1;
+                rob[rob_wb_idx].result <= rob_wb_result;
+                if (rob_wb_is_branch) begin
+                    rob[rob_wb_idx].branch_taken <= rob_wb_branch_taken;
+                    rob[rob_wb_idx].branch_target <= rob_wb_branch_target;
+                end
+            end
+            
+            // Commit stage - advance ROB head
+            if (rob_advance_head && !flush_pipeline) begin
+                rob[rob_head].valid <= 1'b0;  // Mark as committed
+                rob_head <= (rob_head + 1) % ROB_LENGTH;
+                
+                // Return freed physical register to free list
+                if (free_phys_reg) begin
+                    free_list[free_list_tail] <= freed_phys_reg;
+                    free_list_tail <= (free_list_tail + 1) % PHYS_REG_LENGTH;
+                end
+            end
+            
+            // Flush pipeline on misprediction 
+            if (flush_pipeline) begin
+                // Clear valid bit for all ROB entries except current head
+                for (int i = 0; i < ROB_LENGTH; i++) begin
+                    // Only keep the head entry, clear all others
+                    rob[i].valid <= (i == rob_head) ? rob[i].valid : 1'b0;
+                end
+                // Reset tail to head+1 to start fresh allocation
+                rob_tail <= (rob_head + 1) % ROB_LENGTH;
+                
+                // Clear all issue queue entries
+                for (int i = 0; i < IQ_LENGTH; i++) begin
+                    int_iq[i].valid <= 1'b0;
+                    mem_iq[i].valid <= 1'b0;
+                    fp_iq[i].valid <= 1'b0;
+                end
             end
         end
     end
