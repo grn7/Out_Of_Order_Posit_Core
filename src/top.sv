@@ -565,6 +565,181 @@ module top (
                 end
             end
         end
+    end
+        // EX stage
+
+        // Instantiate the required modules
+
+        logic [INT_DATA_W-1:0] adder_a;
+        logic [INT_DATA_W-1:0] adder_b;
+        logic adder_valid_i;
+        logic [INT_DATA_W-1:0] adder_result;
+        logic adder_valid_o;
+
+        adder int_adder(
+            .clk(clk),
+            .rst(rst),
+            .a(adder_a),
+            .b(adder_b),
+            .valid_i(adder_valid_i),
+            .result(adder_result),
+            .valid_o(adder_valid_o)
+        );
+
+        logic [INT_DATA_W-1:0] sub_a;
+        logic [INT_DATA_W-1:0] sub_b;
+        logic sub_valid_i;
+        logic [INT_DATA_W-1:0] sub_result;
+        logic sub_valid_o;
+
+        subtractor int_subtractor(
+            .clk(clk),
+            .rst(rst),
+            .a(sub_a),
+            .b(sub_b),
+            .valid_i(sub_valid_i),
+            .result(sub_result),
+            .valid_o(sub_valid_o)
+        );
+
+        logic [INT_DATA_W-1:0] mul_a;
+        logic [INT_DATA_W-1:0] mul_b;
+        logic mul_valid_i;
+        logic [INT_DATA_W-1:0] mul_result;
+        logic mul_busy;
+
+        multiplier int_multiplier(
+            .clk(clk),
+            .rst(rst),
+            .a(mul_a),
+            .b(mul_b),
+            .valid_i(mul_valid_i),
+            .result(mul_result),
+            .busy(mul_busy)
+        );
+
+        logic [INT_DATA_W-1:0] div_a;
+        logic [INT_DATA_W-1:0] div_b;
+        logic div_valid_i;
+        logic [INT_DATA_W-1:0] div_result;
+        logic div_busy;
+
+        divider int_divider(
+            .clk(clk),
+            .rst(rst),
+            .a(div_a),
+            .b(div_b),
+            .valid_i(div_valid_i),
+            .result(div_result),
+            .busy(div_busy)
+        );
+
+        //start actual implentation of EX stage
+        logic issued;
+        logic [PHYS_REG_IDX_W-1:0] mul_dest; 
+        logic [PHYS_REG_IDX_W-1:0] div_dest;         
+        always_ff @(posedge clk) begin
+            if(rst) begin
+                adder_valid_i <= 'b0;
+                sub_valid_i <= 'b0;
+                mul_valid_i <= 'b0;
+                div_valid_i <= 'b0;
+            end
+
+            else begin
+                issued <= 1'b0; // to replace break as not supported some times
+                adder_valid_i <= 'b0;
+                sub_valid_i <= 'b0;
+                mul_valid_i <= 'b0;
+                div_valid_i <= 'b0;                
+                for(int i = 0; i < IQ_LENGTH; i++) begin
+                    idx = (int_iq_head + i) % IQ_LENGTH;
+                    if(!issued && int_iq[idx].valid && int_iq[idx].rs1_ready &&
+                    (int_iq[idx].opcode == `OPCODE_ARITH_I || int_iq[idx].rs2_ready)) begin
+
+                        case(int_iq[idx].fu_type)
+                            0: begin // for add, sub and other operations can be added
+                                case(int_iq[idx].opcode)
+                                    `OPCODE_ARITH_I: begin
+                                        case(int_iq[idx].funct3)
+                                            3'b000: begin
+                                                    adder_valid_i <= 1'b1;
+                                                    adder_a <= int_iq[idx].rs1_value;
+                                                    adder_b <= int_iq[idx].imm;
+                                                    // ADDI 
+                                            end
+                                            default: begin
+                                                     adder_valid_i <= 1'b1;
+                                                     adder_a <= int_iq[idx].rs1_value;
+                                                     adder_b <= int_iq[idx].imm;
+                                            end
+                                        endcase
+                                    end
+                                    `OPCODE_ARITH_R: begin
+                                        case(int_iq[idx].funct3)
+                                            3'b000: begin
+                                                if(int_iq[idx].funct7 == 7'b0) begin
+                                                    adder_valid_i <= 1'b1;
+                                                    adder_a <= int_iq[idx].rs1_value;
+                                                    adder_b <= int_iq[idx].rs2_value;
+                                                    // ADD
+                                                end
+                                                else begin
+                                                    sub_valid_i <= 1'b1;
+                                                    sub_a <= int_iq[idx].rs1_value;
+                                                    sub_b <= int_iq[idx].rs2_value;
+                                                    // SUB
+                                                end
+                                            end
+                                            default: begin
+                                                     adder_valid_i <= 1'b1;
+                                                     adder_a <= int_iq[idx].rs1_value;
+                                                     adder_b <= int_iq[idx].rs2_value;
+                                            end
+                                        endcase
+                                    end
+                                    default: begin
+                                             adder_valid_i <= 1'b0;
+                                             sub_valid_i <= 1'b0;
+                                    end
+                                endcase
+                                alu_dest <= int_iq[idx].phys_rd;
+                                int_iq[idx].valid <= 1'b0;
+                                issued <= 1'b1;
+                            end
+
+                            2: begin //MUL
+                                if(!mul_busy) begin
+                                    mul_valid_i <= 1'b1;
+                                    mul_a <= int_iq[idx].rs1_value;
+                                    mul_b <= int_iq[idx].rs2_value;
+                                    mul_dest <= int_iq[idx].phys_rd;
+                                    int_iq[idx].valid <= 1'b0;
+                                    issued <= 1'b1;
+                                end
+                            end
+
+                            3: begin //DIV
+                                if(!div_busy) begin
+                                    div_valid_i <= 1'b1;
+                                    div_a <= int_iq[idx].rs1_value;
+                                    div_b <= int_iq[idx].rs2_value;
+                                    div_dest <= int_iq[idx].phys_rd;
+                                    int_iq[idx].valid <= 1'b0;
+                                    issued <= 1'b1;
+                                end
+                            end
+                        endcase
+                    end
+                end
+            end
+        end
+                                     
+        // add mem_iq operations 
+        // fp_iq operations can be added later 
+
+
+
         
         // Writeback to ROB - mark entries as done and update results
         if (rob_wb_valid) begin

@@ -8,15 +8,21 @@ module adder(
     input rst,
     input logic [INT_DATA_W-1:0] a,
     input logic [INT_DATA_W-1:0] b,
-    output logic [INT_DATA_W-1:0] result
+    input logic valid_i,
+    output logic [INT_DATA_W-1:0] result,
+    output logic valid_o
 );
 
 always_ff @(posedge clk) begin
     if(rst) begin
         result <= 'b0;
+        valid_o <= 1'b0;
     end
     else begin
-        result <= a+b;
+        valid_o <= valid_i;
+        if(valid_i) begin
+            result <= a+b;
+        end
     end
 end
     
@@ -28,15 +34,21 @@ module subtractor(
     input rst,
     input logic [INT_DATA_W-1:0] a,
     input logic [INT_DATA_W-1:0] b,
-    output logic [INT_DATA_W-1:0] result
+    input logic valid_i,
+    output logic [INT_DATA_W-1:0] result,
+    output logic valid_o
 );
 
 always_ff @(posedge clk) begin
     if(rst) begin
         result <= 'b0;
+        valid_o <= 1'b0;
     end
     else begin
-        result <= a-b;
+        valid_o <= valid_i;
+        if(valid_i) begin
+            result <= a-b;
+        end
     end
 end
     
@@ -48,7 +60,7 @@ module multiplier(
     input rst,
     input logic [INT_DATA_W-1:0] a,
     input logic [INT_DATA_W-1:0] b,
-    input logic start,
+    input logic valid_i,
     output logic [INT_DATA_W-1:0] result,
     output logic busy
 );
@@ -63,7 +75,7 @@ always_ff @(posedge clk) begin
         count_mul <= 'b0;
         busy <= 'b0;
     end
-    else if (start && !busy ) begin
+    else if (valid_i && !busy ) begin
         a_store <= a; //latch the inputs 
         b_store <= b;
         busy <= 1'b1;
@@ -90,7 +102,7 @@ module divider(
     input rst,
     input logic [INT_DATA_W-1:0] a,
     input logic [INT_DATA_W-1:0] b,
-    input logic start,
+    input logic valid_i,
     output logic [INT_DATA_W-1:0] result,
     output logic busy
 );
@@ -105,7 +117,7 @@ always_ff @(posedge clk) begin
         count_div <= 'b0;
         busy <= 'b0;
     end
-    else if (start && !busy ) begin
+    else if (valid_i && !busy ) begin
         a_store <= a; //latch the inputs 
         b_store <= b;
         busy <= 1'b1;
