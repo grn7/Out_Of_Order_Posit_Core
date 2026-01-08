@@ -1,7 +1,7 @@
 module lsu #(
     parameter ADDR_W = 32,
     parameter DATA_W = 32,
-    parameter ROB_W  = 6,
+    parameter ROB_W  = ROB_IDX_W,
     parameter LQ_SIZE = 8,
     parameter SQ_SIZE = 8
 )(
@@ -13,7 +13,7 @@ module lsu #(
     input  logic              issue_is_load,
     input  logic              issue_is_store,
     input  logic [ROB_W-1:0]  issue_rob,
-    input  logic [ROB_W-1:0]  issue_phys_rd,
+    input  logic [PHYS_REG_IDX_W-1:0]  issue_phys_rd,
     input  logic [ADDR_W-1:0] issue_addr,
     input  logic [DATA_W-1:0] issue_store_data,
 
@@ -24,7 +24,7 @@ module lsu #(
     // Writeback interface to ROB
     output logic              wb_valid,
     output logic [ROB_W-1:0]  wb_rob,
-    output logic [ROB_W-1:0]  wb_phys_rd,
+    output logic [PHYS_REG_IDX_W-1:0]  wb_phys_rd,
     output logic [DATA_W-1:0] wb_data,
 
     // Memory interface

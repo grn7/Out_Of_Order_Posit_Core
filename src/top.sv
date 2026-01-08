@@ -311,8 +311,8 @@ module top (
     assign rob_head_branch_target = rob[rob_head].branch_target;
 
     //Register renaming 
-    logic [ARCH_REG_IDX_W-1:0] rename_table [0:ARCH_REG_LENGTH-1]; //maps logical to physical register
-    logic [ARCH_REG_IDX_W-1:0] old_rename_table [0:ARCH_REG_LENGTH-1]; //for recovery
+    logic [PHYS_REG_IDX_W-1:0] rename_table [0:ARCH_REG_LENGTH-1]; //maps logical to physical register
+    logic [PHYS_REG_IDX_W-1:0] old_rename_table [0:ARCH_REG_LENGTH-1]; //for recovery
     logic [PHYS_REG_IDX_W-1:0] free_list [0:PHYS_REG_LENGTH-1];
     logic [PHYS_REG_IDX_W-1:0] free_list_head, free_list_tail;
     logic free_list_empty;
@@ -321,9 +321,9 @@ module top (
     iq_entry_t int_iq [0:IQ_LENGTH-1];
     iq_entry_t mem_iq [0:IQ_LENGTH-1];
     iq_entry_t fp_iq [0:IQ_LENGTH-1];
-    logic [IQ_LENGTH-1:0] int_iq_head, int_iq_tail;
-    logic [IQ_LENGTH-1:0] mem_iq_head, mem_iq_tail;
-    logic [IQ_LENGTH-1:0] fp_iq_head, fp_iq_tail;
+    logic [$clog2(IQ_LENGTH)-1:0] int_iq_head, int_iq_tail;
+    logic [$clog2(IQ_LENGTH)-1:0] mem_iq_head, mem_iq_tail;
+    logic [$clog2(IQ_LENGTH)-1:0] fp_iq_head, fp_iq_tail;
     logic int_iq_full, mem_iq_full, fp_iq_full;
 
     //Physical reg file
@@ -345,18 +345,18 @@ module top (
     logic mem_issued;    // For mem_iq
 
     //Status flags
-    assign rob_full = ((rob_tail+1)%ROB_LENGTH == rob_head) && rob[rob_tail].valid;
+    assign rob_full = ((rob_tail+1)%ROB_IDX_W'(ROB_LENGTH) == rob_head) && rob[rob_tail].valid;
     assign rob_empty = (rob_head == rob_tail) && !rob[rob_head].valid;
     assign free_list_empty = (free_list_head == free_list_tail);
-    assign int_iq_full = ((int_iq_tail+1)%IQ_LENGTH == int_iq_head) && int_iq[int_iq_tail].valid;
-    assign mem_iq_full = ((mem_iq_tail+1)%IQ_LENGTH == mem_iq_head) && mem_iq[mem_iq_tail].valid;
-    assign fp_iq_full = ((fp_iq_tail+1)%IQ_LENGTH == fp_iq_head) && fp_iq[fp_iq_tail].valid;
+    assign int_iq_full = ((int_iq_tail+1)%IQ_IDX_W'(IQ_LENGTH) == int_iq_head) && int_iq[int_iq_tail].valid;
+    assign mem_iq_full = ((mem_iq_tail+1)%IQ_IDX_W'(IQ_LENGTH) == mem_iq_head) && mem_iq[mem_iq_tail].valid;
+    assign fp_iq_full = ((fp_iq_tail+1)%IQ_IDX_W'(IQ_LENGTH) == fp_iq_head) && fp_iq[fp_iq_tail].valid;
 
     int idx;
 
     //Decode / Rename / Dispatch stage
     logic [31:0] current_inst;
-    logic [PHYS_REG_IDX_W-1:0] rs1, rs2, rd;
+    logic [ARCH_REG_IDX_W-1:0] rs1, rs2, rd;
     logic [INT_DATA_W-1:0] immediate;
     logic [6:0] opcode;
     logic [2:0] funct3;
@@ -380,15 +380,15 @@ module top (
         if (rst) begin
             // Initialize rename table to identity mapping
             for (int i = 0; i < ARCH_REG_LENGTH; i++) begin
-                rename_table[i] <= i;
+                rename_table[i] <= PHYS_REG_IDX_W'(i);
             end
     
             // Initialize free list
             for (int i = ARCH_REG_LENGTH; i < PHYS_REG_LENGTH; i++) begin
-                free_list[i - ARCH_REG_LENGTH] <= i;
+                free_list[i - ARCH_REG_LENGTH] <= PHYS_REG_IDX_W'(i);
             end
             free_list_head <= 0;
-            free_list_tail <= PHYS_REG_LENGTH - ARCH_REG_LENGTH;
+            free_list_tail <= PHYS_REG_IDX_W'(PHYS_REG_LENGTH - ARCH_REG_LENGTH);
             
             // Initialize execution tracking
             alu_valid <= 1'b0;
@@ -397,7 +397,7 @@ module top (
             mul_rob_idx <= '0;
             div_rob_idx <= '0;
             free_list_head <= 0;
-            free_list_tail <= PHYS_REG_LENGTH - ARCH_REG_LENGTH;
+            free_list_tail <= PHYS_REG_IDX_W'(PHYS_REG_LENGTH - ARCH_REG_LENGTH);
             
             // Initialize issue queues
             for (int i = 0; i < IQ_LENGTH; i++) begin
@@ -458,7 +458,7 @@ module top (
                     rob[rob_tail].old_phys_rd <= rename_table[rd];  // Save old mapping for free list return
                     rob[rob_tail].phys_rd <= free_list[free_list_head];
                     rename_table[rd] <= free_list[free_list_head];
-                    free_list_head <= (free_list_head + 1) % PHYS_REG_LENGTH;
+                    free_list_head <= (free_list_head + 1) % PHYS_REG_IDX_W'(PHYS_REG_LENGTH);
                 end 
                 else begin
                     rob[rob_tail].old_phys_rd <= 0;  // No old mapping for x0
@@ -498,7 +498,7 @@ module top (
                                 int_iq[int_iq_tail].fu_type <= 0; // ALU
                             end
                             
-                            int_iq_tail <= (int_iq_tail + 1) % IQ_LENGTH;
+                            int_iq_tail <= (int_iq_tail + 1) % IQ_IDX_W'(IQ_LENGTH);
                         end
                     end
                     
@@ -519,7 +519,7 @@ module top (
                             mem_iq[mem_iq_tail].fu_type <= 1; // MEM
                             mem_iq[mem_iq_tail].rob_idx <= rob_tail;
                             
-                            mem_iq_tail <= (mem_iq_tail + 1) % IQ_LENGTH;
+                            mem_iq_tail <= (mem_iq_tail + 1) % IQ_IDX_W'(IQ_LENGTH);
                         end
                     end
                     
@@ -540,12 +540,14 @@ module top (
                             fp_iq[fp_iq_tail].fu_type <= 4; // FPU
                             fp_iq[fp_iq_tail].rob_idx <= rob_tail;
                             
-                            fp_iq_tail <= (fp_iq_tail + 1) % IQ_LENGTH;
+                            fp_iq_tail <= (fp_iq_tail + 1) % IQ_IDX_W'(IQ_LENGTH);
                         end
+                    end
+                    default: begin
                     end
                 endcase
                 
-                rob_tail <= (rob_tail + 1) % ROB_LENGTH;
+                rob_tail <= (rob_tail + 1) % ROB_IDX_W'(ROB_LENGTH);
             end
         end    
         
@@ -697,7 +699,8 @@ module top (
             end
         end
         
-        // Issue logic from int_iq         
+        // Issue logic from int_iq  
+        logic [IQ_IDX_W-1:0] local_idx;       
         always_ff @(posedge clk) begin
             if(rst) begin
                 adder_valid_i <= 'b0;
@@ -714,7 +717,7 @@ module top (
                 mul_valid_i <= 'b0;
                 div_valid_i <= 'b0;                
                 for(int i = 0; i < IQ_LENGTH; i++) begin
-                    automatic int local_idx = (int_iq_head + i) % IQ_LENGTH;
+                    local_idx = (int_iq_head + IQ_IDX_W'(i)) % IQ_IDX_W'(IQ_LENGTH);
                     if(!issued && int_iq[local_idx].valid && int_iq[local_idx].rs1_ready &&
                     (int_iq[local_idx].opcode == `OPCODE_ARITH_I || int_iq[local_idx].rs2_ready)) begin
 
@@ -804,6 +807,7 @@ module top (
     // end of main always_ff block
     
     // Separate always block for mem_iq execution
+    logic [IQ_IDX_W-1:0] local_idx_2;
     always_ff @(posedge clk) begin
         if (rst) begin
             issue_valid <= 1'b0;
@@ -820,27 +824,27 @@ module top (
             
             // Select ready entry from mem_iq to issue to LSU
             for (int i = 0; i < IQ_LENGTH; i++) begin
-                automatic int local_idx = (mem_iq_head + i) % IQ_LENGTH;
-                if (!mem_issued && mem_iq[local_idx].valid && mem_iq[local_idx].rs1_ready &&
-                    (mem_iq[local_idx].opcode == `OPCODE_LOAD || mem_iq[local_idx].rs2_ready)) begin
+                local_idx_2 = (mem_iq_head + IQ_IDX_W'(i)) % IQ_IDX_W'(IQ_LENGTH);
+                if (!mem_issued && mem_iq[local_idx_2].valid && mem_iq[local_idx_2].rs1_ready &&
+                    (mem_iq[local_idx_2].opcode == `OPCODE_LOAD || mem_iq[local_idx_2].rs2_ready)) begin
                     
                     issue_valid <= 1'b1;
-                    issue_is_load <= (mem_iq[local_idx].opcode == `OPCODE_LOAD);
-                    issue_is_store <= (mem_iq[local_idx].opcode == `OPCODE_STORE);
-                    issue_rob <= mem_iq[local_idx].rob_idx;
-                    issue_phys_rd <= mem_iq[local_idx].phys_rd;
+                    issue_is_load <= (mem_iq[local_idx_2].opcode == `OPCODE_LOAD);
+                    issue_is_store <= (mem_iq[local_idx_2].opcode == `OPCODE_STORE);
+                    issue_rob <= mem_iq[local_idx_2].rob_idx;
+                    issue_phys_rd <= mem_iq[local_idx_2].phys_rd;
                     
                     // Calculate address: base + offset
-                    issue_addr <= mem_iq[local_idx].rs1_value + mem_iq[local_idx].imm;
+                    issue_addr <= mem_iq[local_idx_2].rs1_value + mem_iq[local_idx_2].imm;
                     
                     // Store data from rs2
-                    if (mem_iq[local_idx].opcode == `OPCODE_STORE) begin
-                        issue_store_data <= mem_iq[local_idx].rs2_value;
+                    if (mem_iq[local_idx_2].opcode == `OPCODE_STORE) begin
+                        issue_store_data <= mem_iq[local_idx_2].rs2_value;
                     end else begin
                         issue_store_data <= '0;
                     end
                     
-                    mem_iq[local_idx].valid <= 1'b0;
+                    mem_iq[local_idx_2].valid <= 1'b0;
                     mem_issued <= 1'b1;
                 end
             end
@@ -865,12 +869,12 @@ module top (
             // Commit stage - advance ROB head
             if (rob_advance_head && !flush_pipeline) begin
                 rob[rob_head].valid <= 1'b0;  // Mark as committed
-                rob_head <= (rob_head + 1) % ROB_LENGTH;
+                rob_head <= (rob_head + 1) % ROB_IDX_W'(ROB_LENGTH);
                 
                 // Return freed physical register to free list
                 if (free_phys_reg) begin
                     free_list[free_list_tail] <= freed_phys_reg;
-                    free_list_tail <= (free_list_tail + 1) % PHYS_REG_LENGTH;
+                    free_list_tail <= (free_list_tail + 1) % PHYS_REG_IDX_W'(PHYS_REG_LENGTH);
                 end
             end
             
@@ -879,10 +883,10 @@ module top (
                 // Clear valid bit for all ROB entries except current head
                 for (int i = 0; i < ROB_LENGTH; i++) begin
                     // Only keep the head entry, clear all others
-                    rob[i].valid <= (i == rob_head) ? rob[i].valid : 1'b0;
+                    rob[i].valid <= (ROB_IDX_W'(i) == rob_head) ? rob[i].valid : 1'b0;
                 end
                 // Reset tail to head+1 to start fresh allocation
-                rob_tail <= (rob_head + 1) % ROB_LENGTH;
+                rob_tail <= (rob_head + 1) % ROB_IDX_W'(ROB_LENGTH);
                 
                 // Clear all issue queue entries
                 for (int i = 0; i < IQ_LENGTH; i++) begin

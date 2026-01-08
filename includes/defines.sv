@@ -7,7 +7,7 @@ package general_defines;
     parameter BYPASS_LENGTH = 3;
     parameter PHYS_REG_LENGTH = 64;
     parameter ARCH_REG_LENGTH = 32;
-    parameter INSTR_MEM_LENGTH = 256;
+    parameter INSTR_MEM_LENGTH = 1024;
     parameter DATA_MEM_LENGTH = 256;
     parameter FETCH_BUFFER_LENGTH = 8;
     parameter PHT_LENGTH = 1024; 
@@ -78,7 +78,7 @@ package general_defines;
         logic valid;
         logic [2:0] funct3;
         logic [6:0] funct7;
-        logic [ROB_IDX_W:0] rob_idx;
+        logic [ROB_IDX_W-1:0] rob_idx;
     } iq_entry_t;
 
     typedef struct packed {
