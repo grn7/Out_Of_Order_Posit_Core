@@ -801,7 +801,7 @@ module top (
         
         // Memory IQ execution - issue to LSU
         // Issue logic from mem_iq
-    end // end of main always_ff block
+    // end of main always_ff block
     
     // Separate always block for mem_iq execution
     always_ff @(posedge clk) begin

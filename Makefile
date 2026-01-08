@@ -4,6 +4,7 @@ SV_FILES = \
 	includes/defines.sv \
 	src/bp.sv \
 	src/btb.sv \
+	src/commit.sv \
 	src/ID.sv \
 	src/IF.sv \
 	src/int_alu_test.sv \
@@ -11,6 +12,7 @@ SV_FILES = \
 	src/lsu.sv \
 	src/mem.sv \
 	src/sq.sv \
+	src/writeback.sv \
 	src/top.sv \
 
 lint:
