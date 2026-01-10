@@ -7,10 +7,10 @@ package general_defines;
     parameter BYPASS_LENGTH = 3;
     parameter PHYS_REG_LENGTH = 64;
     parameter ARCH_REG_LENGTH = 32;
-    parameter INSTR_MEM_LENGTH = 1024;
+    parameter INSTR_MEM_LENGTH = 256;
     parameter DATA_MEM_LENGTH = 256;
     parameter FETCH_BUFFER_LENGTH = 8;
-    parameter PHT_LENGTH = 1024; 
+    parameter PHT_LENGTH = 256; 
     parameter BTB_LENGTH = 64;
 
     //derived parameters 

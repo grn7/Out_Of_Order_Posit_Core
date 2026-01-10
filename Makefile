@@ -14,6 +14,7 @@ SV_FILES = \
 	src/sq.sv \
 	src/writeback.sv \
 	src/top.sv \
+	tb/top_tb.sv
 
 lint:
-	verilator --sv --lint-only $(SV_FILES)
+	verilator --sv --lint-only --timing $(SV_FILES)
