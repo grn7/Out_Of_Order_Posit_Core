@@ -19,6 +19,12 @@ module mem #(
     logic [DATA_W-1:0] mem_array [0:DEPTH-1];  // memory storage
     logic [ADDR_W-1:0] rd_addr_q;               // registered read address
 
+    // Initialize memory for testing
+    initial begin
+        mem_array[0] = 32'h12345678; // Value for lw instruction
+        for (int i = 1; i < DEPTH; i++) mem_array[i] = 0;
+    end
+
     always_ff @(posedge clk) begin
         if (rst) begin
             rd_resp   <= 1'b0;                  // clear read response
@@ -28,14 +34,16 @@ module mem #(
             rd_resp   <= rd_valid;              // propagate read valid
             rd_addr_q <= rd_addr;               // latch address
             if (rd_valid) begin
-                rd_data <= mem_array[rd_addr[$clog2(DEPTH)-1:0]]; // read data
+                // Convert byte address to word index (divide by 4)
+                rd_data <= mem_array[rd_addr[$clog2(DEPTH)-1:2]]; // read data
             end
         end
     end
 
     always_ff @(posedge clk) begin
         if (wr_valid) begin
-            mem_array[wr_addr[$clog2(DEPTH)-1:0]] <= wr_data; // write memory
+            // Convert byte address to word index (divide by 4)
+            mem_array[wr_addr[$clog2(DEPTH)-1:2]] <= wr_data; // write memory
         end
     end
 
